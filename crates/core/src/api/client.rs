@@ -46,11 +46,14 @@ impl ApiClient {
                     });
                 }
                 Ok(Err(e)) => {
-                    warn!("连接 {candidate} 失败: {e}");
+                    // 降到 debug：皎月连没运行时每次探测都必然失败，
+                    // 每轮刷 2~4 条 WARN 会把真正有用的信息淹没
+                    // （实测一天写出 11 MB 日志）。结论由上层按状态给出。
+                    debug!("连接 {candidate} 失败: {e}");
                     last_err = Some(anyhow::anyhow!("{candidate}: {e}"));
                 }
                 Err(_) => {
-                    warn!("连接 {candidate} 超时");
+                    debug!("连接 {candidate} 超时");
                     last_err = Some(anyhow::anyhow!("{candidate}: 连接超时"));
                 }
             }
