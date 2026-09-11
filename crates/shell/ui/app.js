@@ -341,10 +341,29 @@ $('btn-refresh').onclick = () => loadStatus();
 $('btn-save').onclick = async () => {
   try {
     const view = readForm();
-    const msg = await invoke('save_config', { view });
-    showMsg(msg, false);
+    // 开机自启是注册表操作，不属于 config.json，必须在这里单独同步。
+    // 注意要**先**取值：紧接着的 loadConfig() 会把复选框重置为 false，
+    // 而保存流程又不刷新它，表现出来就是"一保存就自动取消勾选"。
+    const wantAutostart = $('f-autostart')?.checked ?? false;
+
+    let msg = await invoke('save_config', { view });
+
+    try {
+      const r = await invoke('autostart_set', { enable: wantAutostart });
+      if (r) msg += ' · ' + r;
+    } catch (e) {
+      msg += ' · 开机自启设置失败：' + errText(e);
+    }
+
     await loadConfig();
+
+    // 用注册表的真实状态回填，保证界面与实际一致
+    try {
+      $('f-autostart').checked = await invoke('autostart_status');
+    } catch (_) { /* 读不到就保持原状 */ }
+
     await refreshConfigCheck();   // 保存后重新校验
+    showMsg(msg, false);
   } catch (e) {
     showMsg('保存失败：' + errText(e), true);
   }
