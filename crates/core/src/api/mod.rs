@@ -6,4 +6,4 @@
 pub mod client;
 pub mod protocol;
 
-pub use client::{probe, ApiClient, ProbeResult};
+pub use client::{probe, ApiClient, ClientLink, ProbeResult};

@@ -56,9 +56,15 @@
           <span class="stat-label">皎月连进程</span>
           <span class="stat-value" id="st-process">—</span>
         </div>
-        <div class="stat">
+        <!-- 服务端状态只在服务端模式有意义 -->
+        <div class="stat mode-only-server">
           <span class="stat-label">服务端</span>
           <span class="stat-value" id="st-server">—</span>
+        </div>
+        <!-- 客户端模式关心的是「有没有连上目标主机」 -->
+        <div class="stat mode-only-client" hidden>
+          <span class="stat-label">目标连接</span>
+          <span class="stat-value" id="st-link">—</span>
         </div>
         <div class="stat">
           <span class="stat-label">账号</span>

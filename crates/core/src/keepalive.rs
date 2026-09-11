@@ -98,6 +98,13 @@ pub struct Keepalive {
     last_error_is_config: bool,
     /// 上次看到的配置文件指纹（用于热重载）
     config_fp: Option<crate::config::Fingerprint>,
+    /// 客户端模式：本机是否已连上目标主机。
+    ///
+    /// 为什么需要它：natpierce 只在连接/断开**事件发生时**推送消息，
+    /// 新开一条 WebSocket 不保证重放当前状态，探测经常拿不到连接状态。
+    /// 这时靠这里记住"上次确实连上了"，避免每轮都重发 conpc 造成连接抖动。
+    /// 守护进程重启后为 false，会重新确认一次连接。
+    client_link_ok: bool,
 }
 
 impl Keepalive {
@@ -113,6 +120,7 @@ impl Keepalive {
             last_error: None,
             last_error_is_config: false,
             config_fp: fp,
+            client_link_ok: false,
         }
     }
 
@@ -285,20 +293,23 @@ impl Keepalive {
             }
 
             Health::ClientDisconnected => {
-                info!("与目标主机的连接已断开，尝试重连");
+                info!("未连接到目标主机，尝试连接");
                 match self.connect_target().await {
                     Ok(true) => {
                         self.repairs += 1;
                         self.failures = 0;
-                        info!("已重新连接到目标主机");
+                        self.client_link_ok = true;
+                        info!("已连接到目标主机");
                     }
                     Ok(false) => {
                         self.failures += 1;
-                        warn!("重连未成功（第 {} 次）", self.failures);
+                        self.client_link_ok = false;
+                        warn!("连接目标主机未成功（第 {} 次）", self.failures);
                     }
                     Err(e) => {
                         self.failures += 1;
-                        warn!("重连出错: {e:#}");
+                        self.client_link_ok = false;
+                        warn!("连接目标主机出错: {e:#}");
                     }
                 }
                 self.maybe_restart_process().await?;
@@ -368,7 +379,12 @@ impl Keepalive {
         }
     }
 
-    /// 客户端模式下判断是否已连上目标主机
+    /// 客户端模式下判断本机是否**已连接**到目标主机
+    ///
+    /// 此处曾经错把「目标出现在在线主机列表里」当作「已连接」：
+    /// 只要对方在线就判定健康，`connect_target()` 永远不会被触发，
+    /// 表现为「填了识别码，日志里却根本不发起连接」。
+    /// **在线 ≠ 已连接** —— 前者只说明"能看见对方"。
     fn client_connected(&self, r: &api::ProbeResult) -> bool {
         let cfg = self.cfg();
         let target_id = cfg.client.target_host_id.trim();
@@ -379,13 +395,22 @@ impl Keepalive {
             return true;
         }
 
-        // 在线主机列表里还能看到目标 → 说明本机与云端链路正常
-        // 注意：列表里出现目标≠已连接。真正的"已连接"要看状态消息，
-        // 这里采用保守策略：目标不在线 → 断线；目标在线 → 认为可用。
-        if target_id.is_empty() {
-            return r.hosts.iter().any(|h| h.name == target_name);
+        // ① 探测期间收到了明确的连接类消息 → 以它为准
+        match r.client_link {
+            api::ClientLink::Connected => return true,
+            api::ClientLink::Failed | api::ClientLink::Disconnected => return false,
+            api::ClientLink::Unknown => {}
         }
-        r.hosts.iter().any(|h| h.id == target_id)
+
+        // ② 拿不到连接状态时：目标必须在线（不在线必然连不上），
+        //    再叠加"上一次我们确实连上过"。两个都满足才算健康，
+        //    否则交给 connect_target() 去连。
+        let target_online = if target_id.is_empty() {
+            r.hosts.iter().any(|h| h.name == target_name)
+        } else {
+            r.hosts.iter().any(|h| h.id == target_id)
+        };
+        target_online && self.client_link_ok
     }
 
     /// 进程层：启动 natpierce（提权）

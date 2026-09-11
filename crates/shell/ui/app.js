@@ -256,6 +256,16 @@ function renderStatus(st) {
     setStat($('st-server'), '未知', '');
   }
 
+  // 客户端模式：显示与目标主机的连接状态
+  // （unknown 表示本次探测没拿到连接状态，不等于"没连上"）
+  switch (st.clientLink) {
+    case 'connected':    setStat($('st-link'), '已连接', 'ok');   break;
+    case 'failed':       setStat($('st-link'), '连接被拒', 'err'); break;
+    case 'disconnected': setStat($('st-link'), '已断开', 'warn'); break;
+    case 'unknown':      setStat($('st-link'), '探测中', 'warn'); break;
+    default:             setStat($('st-link'), '—', '');
+  }
+
   setStat($('st-account'), st.account || '—');
   setStat($('st-ident'), st.identification || '—');
 

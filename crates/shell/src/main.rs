@@ -51,6 +51,8 @@ struct Status {
     elevated: bool,
     api_reachable: bool,
     server_running: Option<bool>,
+    /// 客户端模式下的目标连接状态：connected / failed / disconnected / unknown
+    client_link: String,
     account: String,
     identification: String,
     machine_name: String,
@@ -747,6 +749,12 @@ async fn collect_status(path: &std::path::Path) -> Result<Status, String> {
         ..Default::default()
     };
 
+    // 进程都没起来就不必探测：本地接口必然连不上，
+    // 白白等一轮连接超时，界面会一直停在「检测中…」。
+    if !s.process_alive {
+        return Ok(s);
+    }
+
     match api::probe(
         &cfg.api.url,
         &cfg.api.fallback_url,
@@ -758,6 +766,13 @@ async fn collect_status(path: &std::path::Path) -> Result<Status, String> {
         Ok(r) => {
             s.api_reachable = true;
             s.server_running = r.server_running;
+            s.client_link = match r.client_link {
+                api::ClientLink::Connected => "connected",
+                api::ClientLink::Failed => "failed",
+                api::ClientLink::Disconnected => "disconnected",
+                api::ClientLink::Unknown => "unknown",
+            }
+            .to_string();
             if let Some(info) = &r.server_info {
                 s.account = info.account.clone();
                 s.identification = info.identification.clone();

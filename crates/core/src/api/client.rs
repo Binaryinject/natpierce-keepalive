@@ -141,6 +141,24 @@ impl ApiClient {
     }
 }
 
+/// 客户端模式下本机与目标主机的连接状态
+///
+/// natpierce 只在**事件发生时**推送 `conpc`/`conerr`/`discon`，
+/// 新开一条 WebSocket 不保证重放当前状态，所以保留了 `Unknown` ——
+/// 它表示"这次探测没拿到连接状态"，**不等于**"没连上"。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClientLink {
+    /// 本次探测未收到任何连接类消息
+    #[default]
+    Unknown,
+    /// 收到 conpc：连接成功
+    Connected,
+    /// 收到 conerr：连接被拒绝
+    Failed,
+    /// 收到 discon：连接已断开
+    Disconnected,
+}
+
 /// 一次性的状态查询结果
 #[derive(Debug, Clone, Default)]
 pub struct ProbeResult {
@@ -152,6 +170,8 @@ pub struct ProbeResult {
     pub server_info: Option<protocol::ServerInfo>,
     /// 在线主机
     pub hosts: Vec<protocol::HostEntry>,
+    /// 客户端连接状态（由 conpc / conerr / discon 推断）
+    pub client_link: ClientLink,
     /// 原始消息（调试用）
     pub raw: Vec<String>,
     /// 收到的提示信息
@@ -170,7 +190,9 @@ pub async fn probe(
     let mut result = ProbeResult::default();
 
     // 1. 先收初始推送（握手后会立即推 1 或 2）
-    let initial = client.drain(Duration::from_millis(1500)).await;
+    // 这里的时长压得比较短：probe 每 3 秒被状态推送调用一次，
+    // 原来 1500 + 2500 = 4 秒，串起来会让界面首次显示状态等好几秒。
+    let initial = client.drain(Duration::from_millis(700)).await;
     for m in &initial {
         result.raw.push(format!("{m:?}"));
         absorb(&mut result, m);
@@ -178,7 +200,7 @@ pub async fn probe(
 
     // 2. 主动要一次主机列表
     if client.send(&protocol::cmd_pc_list()).await.is_ok() {
-        let extra = client.drain(Duration::from_millis(2500)).await;
+        let extra = client.drain(Duration::from_millis(1300)).await;
         for m in &extra {
             result.raw.push(format!("{m:?}"));
             absorb(&mut result, m);
@@ -207,6 +229,10 @@ fn absorb(r: &mut ProbeResult, m: &Message) {
             }
         }
         Message::Info(s) => r.infos.push(s.clone()),
+        // 连接类消息按到达顺序覆盖 —— 最后一条才代表当前状态
+        Message::ConOk(_) => r.client_link = ClientLink::Connected,
+        Message::ConErr(_) => r.client_link = ClientLink::Failed,
+        Message::Disconnected(_) => r.client_link = ClientLink::Disconnected,
         _ => {}
     }
 }
