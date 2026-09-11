@@ -791,7 +791,30 @@ async fn collect_status(path: &std::path::Path) -> Result<Status, String> {
             s.error = Some(format!("{e}"));
         }
     }
+
+    // 客户端连接状态以守护进程记录的为准。
+    // probe() 是短连接，而 natpierce 只在连接事件发生时推送 conpc，
+    // 新开连接不重放状态 —— 只看探测结果会永远停在「探测中」。
+    if let Some(true) = read_daemon_status(path)
+        .get("clientLinked")
+        .and_then(|v| v.as_bool())
+    {
+        s.client_link = "connected".into();
+    }
+
     Ok(s)
+}
+
+/// 读取守护进程写的运行时状态文件（`.status`）
+///
+/// 守护进程与界面是两个进程，它把「界面需要、但探测又拿不到」的信息写在这里
+/// —— 目前是客户端是否真的连上了目标主机。
+fn read_daemon_status(config_path: &std::path::Path) -> serde_json::Value {
+    let p = config::status_file_path(config_path);
+    std::fs::read_to_string(p)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .unwrap_or(serde_json::Value::Null)
 }
 
 /// 启动后台状态推送线程

@@ -146,6 +146,10 @@ impl Keepalive {
             "repairs": self.repairs,
             "mode": format!("{}", self.cfg().mode),
             "account": self.cfg().account,
+            // 客户端模式的**真实**连接状态，供界面显示「目标连接」。
+            // 不能改用 probe() 的瞬时结果：natpierce 只在连接事件发生时
+            // 推送 conpc，短连接探测拿不到，永远是 unknown。
+            "clientLinked": self.client_link_ok,
             "updatedAt": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         });
         let _ = std::fs::write(path, body.to_string());

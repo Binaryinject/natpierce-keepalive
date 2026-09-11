@@ -151,6 +151,11 @@ main::-webkit-scrollbar-thumb:hover { background: #414858; }
 }
 .card-head h2 { margin-bottom: 0; }
 
+/* hidden 属性必须能压过组件自身的 display。
+   .stat 等设了 display:flex，会盖掉浏览器默认的 [hidden]{display:none}，
+   导致「按模式隐藏」的状态格照样显示出来。 */
+[hidden] { display: none !important; }
+
 /* ---------- 状态区 ---------- */
 .status-grid {
   display: grid;
