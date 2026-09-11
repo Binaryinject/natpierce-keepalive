@@ -21,6 +21,7 @@
     "max_clients": 0,
     "lan_ip": "",
     "vpn_mode": true,
+    "auto_start_server": true,
     "start_timeout_sec": 45
   },
 

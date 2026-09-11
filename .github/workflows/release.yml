@@ -44,15 +44,24 @@ jobs:
       - name: 整理便携版
         shell: pwsh
         run: |
+          # 版本号取自 tag（v0.1.2 → 0.1.2）；手动触发时退回 Cargo.toml
+          $ver = "${{ github.ref_name }}" -replace '^v', ''
+          if ($ver -notmatch '^\d+\.\d+\.\d+') {
+            $ver = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          }
+          Write-Host "版本号: $ver"
+
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item target\release\natpierce-gui.exe         portable\
           Copy-Item target\release\natpierce-keepalived.exe  portable\
           Copy-Item config.example.json                      portable\
           Copy-Item README.md                                portable\
-          Compress-Archive -Path portable\* `
-            -DestinationPath natpierce-keepalive-portable.zip -Force
+
+          $zip = "natpierce-keepalive-$ver-portable.zip"
+          Compress-Archive -Path portable\* -DestinationPath $zip -Force
+          "ZIP_NAME=$zip" >> $env:GITHUB_ENV
           Get-ChildItem portable | Select-Object Name, Length | Format-Table -AutoSize
-          Write-Host "便携版: $((Get-Item natpierce-keepalive-portable.zip).Length) bytes"
+          Write-Host "便携版: $zip ($((Get-Item $zip).Length) bytes)"
       - name: 安装 Tauri CLI
         run: npm install -g @tauri-apps/cli@^2
 
@@ -72,14 +81,24 @@ jobs:
           Get-ChildItem ..\..\target\release\bundle\nsis\*.exe |
             Select-Object Name, Length | Format-Table -AutoSize
 
-      - name: 把守护进程并入安装包目录
+      - name: 统一产物命名
         shell: pwsh
         run: |
-          # 安装包安装后需要两个 exe 同目录，这里把 keepalived 一并放进
-          # 便携版压缩包已经包含它；NSIS 安装包由下面的 artifact 一起提供
-          $nsis = Get-ChildItem target\release\bundle\nsis\*.exe -EA SilentlyContinue
+          # Tauri 生成的安装包名带下划线（natpierce-keepalive_0.1.2_x64-setup.exe），
+          # 这里统一成 natpierce-keepalive-<版本>-setup.exe，与便携版风格一致。
+          $ver = "${{ github.ref_name }}" -replace '^v', ''
+          if ($ver -notmatch '^\d+\.\d+\.\d+') {
+            $ver = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          }
+
+          $nsis = Get-ChildItem target\release\bundle\nsis\*.exe -EA SilentlyContinue | Select-Object -First 1
           if (-not $nsis) { throw "未生成 NSIS 安装包" }
-          Write-Host "安装包: $($nsis.Name)"
+          Write-Host "原始安装包: $($nsis.Name)"
+
+          $setup = "natpierce-keepalive-$ver-setup.exe"
+          Copy-Item $nsis.FullName $setup -Force
+          "SETUP_NAME=$setup" >> $env:GITHUB_ENV
+          Write-Host "重命名后: $setup ($((Get-Item $setup).Length) bytes)"
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -88,8 +107,8 @@ jobs:
           path: |
             target/release/natpierce-gui.exe
             target/release/natpierce-keepalived.exe
-            target/release/bundle/nsis/*.exe
-            natpierce-keepalive-portable.zip
+            natpierce-keepalive-*-setup.exe
+            natpierce-keepalive-*-portable.zip
           if-no-files-found: error
 
   # ------------------------------------------------------------
@@ -113,28 +132,38 @@ jobs:
       - name: 说明文件
         run: |
           cat > RELEASE_NOTES.md <<'EOF'
-          ## 皎月连保活守护
+          ## natpierce-keepalive
+
+          皎月连（natpierce）连接保活守护 —— 服务端 / 客户端双模式，图形界面 + 独立守护进程。
 
           ### 下载哪个
+
           | 文件 | 说明 |
           |---|---|
-          | `*-setup.exe` | 安装包，双击安装（推荐） |
-          | `natpierce-keepalive-portable.zip` | 便携版，解压即用 |
+          | `natpierce-keepalive-<版本>-setup.exe` | NSIS 安装包，双击安装（推荐，按当前用户安装，无需管理员） |
+          | `natpierce-keepalive-<版本>-portable.zip` | 便携版，解压即用 |
 
           ### 首次使用
-          1. 启动 `natpierce-gui.exe`
-          2. 界面顶部会提示缺什么 → 点「浏览…」选择你的 `natpierce.exe`
-          3. 填写「页面访问密码」（皎月连界面里的 6-20 位密码）
-          4. 点「保存配置」→ **保活自动开启**，无需其他操作
 
-          ### 特性
-          - 服务端 / 客户端双模式（互斥）
-          - 三层判据保活：进程层 / 服务层 / 心跳层
-          - 配置热重载、优雅停止
+          1. 启动 `natpierce-gui.exe`
+          2. 界面会弹出红色警告框，逐条列出缺什么 → 点「浏览…」选择你的 `natpierce.exe`
+          3. 填写「页面访问密码」（皎月连界面里的 6-20 位密码，组网模式下必填）
+          4. 点「保存配置」→ **保活自动开启**，之后不用再管
+
+          客户端模式则把「目标识别码」填上（可直接在「在线主机」列表点选）。
+
+          ### 主要特性
+
+          - 服务端 / 客户端双模式（互斥），配好即自动保活
+          - 三层判据：进程层 / 服务层 / 心跳层，逐级定位再对症恢复
+          - 服务端模式自动先开「组网模式」，再开启服务端
+          - 界面内嵌运行日志，启动/恢复全过程直接可见
+          - 配置热重载、优雅停止、防重启风暴
           - 密码用 Windows DPAPI 加密，不明文落盘
           - 只与本机 `127.0.0.1:33272` 通信，不向外发送数据
 
           ### 环境要求
+
           Windows 10/11 + WebView2（系统通常自带）
 
           详见 [README](https://github.com/${{ github.repository }}#readme)。
