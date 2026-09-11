@@ -55,29 +55,16 @@ jobs:
           Write-Host "便携版: $((Get-Item natpierce-keepalive-portable.zip).Length) bytes"
 
       - name: 安装 Tauri CLI
-        shell: pwsh
-        run: |
-          # 下载官方预编译二进制，比 cargo install 快很多
-          # 版本号来自 https://github.com/tauri-apps/tauri/releases
-          # （tag 形如 tauri-cli-v2.11.4，资源名固定）
-          $ver = "tauri-cli-v2.11.4"
-          $url = "https://github.com/tauri-apps/tauri/releases/download/$ver/cargo-tauri-x86_64-pc-windows-msvc.zip"
-          Write-Host "下载: $url"
-          Invoke-WebRequest -Uri $url -OutFile tauri-cli.zip -UseBasicParsing
-          Expand-Archive tauri-cli.zip -DestinationPath .
-          $exe = Get-ChildItem -Recurse -Filter cargo-tauri.exe | Select-Object -First 1
-          if (-not $exe) { throw "解压后未找到 cargo-tauri.exe" }
-          Copy-Item $exe.FullName "$env:GITHUB_WORKSPACE\cargo-tauri.exe" -Force
-          Get-Item "$env:GITHUB_WORKSPACE\cargo-tauri.exe" | Select-Object Name, Length | Format-Table -AutoSize
-          & "$env:GITHUB_WORKSPACE\cargo-tauri.exe" --version
+        # 用 cargo install 最可靠：预编译包的解压路径/版本号容易出问题。
+        # 依赖 Rust 缓存（Swatinem/rust-cache）加速后续构建。
+        run: cargo install tauri-cli --version "^2" --locked
 
       - name: 构建 NSIS 安装包
         shell: pwsh
         working-directory: crates/shell
         run: |
-          $tauri = "$env:GITHUB_WORKSPACE\cargo-tauri.exe"
-          & $tauri bundle --bundles nsis
-          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe |
+          cargo tauri bundle --bundles nsis
+          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe -EA SilentlyContinue |
             Select-Object Name, Length | Format-Table -AutoSize
 
       - name: 把守护进程并入安装包目录
