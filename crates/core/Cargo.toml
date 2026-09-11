@@ -1,6 +1,6 @@
 [package]
 name = "natpierce-core"
-description = "皎月连保活守护 — 核心库（配置 / 协议 / 保活状态机）"
+description = "natpierce-keepalive 核心库（配置 / 协议 / 保活状态机）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

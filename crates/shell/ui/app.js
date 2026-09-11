@@ -1,4 +1,4 @@
-// 皎月连保活守护 — 前端逻辑
+// natpierce-keepalive — 前端逻辑
 // 通过 Tauri 的 invoke 调用 Rust 后端命令
 
 // ---------- Tauri API 安全获取 ----------
@@ -154,14 +154,31 @@ function fillForm(cfg) {
   if (modeRadio) modeRadio.checked = true;
   updateModeVisibility();
 
-  // 密码
+  // 密码：输入框一律清空（密文从不回显），但把"到底存过没有"明确写出来 ——
+  // 否则重启后框是空的，用户根本不知道自己之前填过没填过。
   $('f-page-pwd').value = '';
   $('f-conn-pwd').value = '';
-  $('page-pwd-hint').textContent = cfg.hasPagePassword
-    ? '已加密保存，留空则不修改'
-    : '组网模式下必填，用于开启服务端';
+  $('f-login-pwd').value = '';
+  setPwdHint('login', cfg.hasLoginPassword);
+  setPwdHint('page', cfg.hasPagePassword);
 
   $('f-autostart').checked = false; // 稍后由 autostart_status 填
+}
+
+/**
+ * 更新密码框下方的保存状态提示。
+ * 密文从不回显，所以只能靠这行文字告诉用户"到底存过没有"。
+ */
+function setPwdHint(which, saved) {
+  const el = $(`${which}-pwd-hint`);
+  if (!el) return;
+  if (saved) {
+    el.textContent = '✅ 已加密保存 · 留空则不修改，输入新密码会覆盖';
+    el.className = 'pwd-hint ok';
+  } else {
+    el.textContent = '⚠ 尚未设置 · 必须填写并保存';
+    el.className = 'pwd-hint missing';
+  }
 }
 
 function readForm() {

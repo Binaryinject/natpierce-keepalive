@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "皎月连保活守护",
+  "productName": "natpierce-keepalive",
   "version": "0.1.1",
   "identifier": "com.binaryinject.natpierce-keepalive",
   "build": {
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "皎月连保活守护",
+        "title": "natpierce-keepalive",
         "width": 880,
         "height": 760,
         "minWidth": 720,

@@ -1,6 +1,6 @@
 [package]
 name = "natpierce-cli"
-description = "皎月连保活守护 — 命令行与守护进程"
+description = "natpierce-keepalive 命令行与守护进程"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

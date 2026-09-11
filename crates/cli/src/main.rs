@@ -359,7 +359,7 @@ fn cmd_autostart(rest: &[String], config_path: Option<PathBuf>) -> Result<()> {
 async fn cmd_status(loaded: LoadedConfig) -> Result<()> {
     let cfg = &loaded.config;
 
-    println!("皎月连保活守护 v{VERSION}");
+    println!("natpierce-keepalive v{VERSION}");
     println!("配置文件  : {}", loaded.path.display());
     println!("运行模式  : {}", cfg.mode);
     println!("进程状态  : {}", natpierce_core::process::describe(&cfg.natpierce.process_name));
@@ -632,7 +632,7 @@ async fn probe_api(cfg: &Config) -> Result<natpierce_core::api::ProbeResult> {
 
 fn print_help() {
     println!(
-        r#"皎月连保活守护 — 守护进程 / 命令行  v{VERSION}
+        r#"natpierce-keepalive — 守护进程 / 命令行  v{VERSION}
 
 用法:
   natpierce-keepalived <命令> [选项]

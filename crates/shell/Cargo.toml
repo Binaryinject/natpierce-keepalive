@@ -1,6 +1,6 @@
 [package]
 name = "natpierce-shell"
-description = "皎月连保活守护 — 图形界面（Tauri + Web UI）"
+description = "natpierce-keepalive 图形界面（Tauri + Web UI）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

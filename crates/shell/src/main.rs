@@ -1,4 +1,4 @@
-//! 皎月连保活守护 — Tauri 图形界面
+//! natpierce-keepalive — Tauri 图形界面
 //!
 //! # 架构
 //!
@@ -142,7 +142,14 @@ impl ConfigView {
             target_host_name: cfg.client.target_host_name.clone(),
             close_server_first: cfg.client.close_server_first,
             keepalive_enabled: cfg.keepalive.enabled,
-            has_page_password: secret::default_secrets_path(config_path).exists(),
+            // 精确到「vault 里真有 page 这一项」，而不是「密文文件存在」——
+            // 文件存在但只有 login 时，旧判断会显示"已保存"，实际却开不了服务端
+            has_page_password: secret::load_key(
+                &secret::default_secrets_path(config_path),
+                secret::KEY_PAGE,
+            )
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
             account: cfg.account.clone(),
             login_password: String::new(),
             has_login_password: secret::load_key(
@@ -244,7 +251,14 @@ fn save_config(
     };
 
     if !was_running {
-        return Ok("已保存".into());
+        // 之前没在跑 —— 通常就是首次配置：必填项刚补齐，应当立刻拉起来，
+        // 而不是干等下次打开界面才自动启动（那样用户会觉得"保存了却没反应"）。
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            autostart_keepalive_if_ready(&handle);
+        });
+        return Ok("已保存，正在启动保活…".into());
     }
 
     // 异步重启，避免阻塞界面（停止要等守护进程退出，最长数秒）
@@ -335,8 +349,15 @@ fn check_config(state: tauri::State<'_, Mutex<AppState>>) -> Result<ConfigCheck,
         let secrets = secret::default_secrets_path(&st.config_path);
         if pwd_ref.is_empty() {
             problems.push("尚未设置「页面访问密码」，请在界面填写后保存".into());
-        } else if pwd_ref.eq_ignore_ascii_case("dpapi") && !secrets.exists() {
-            problems.push("「页面访问密码」尚未录入，请在界面填写后保存".into());
+        } else if pwd_ref.eq_ignore_ascii_case("dpapi") {
+            // 同样要精确到 vault 里的 page 项：只看"文件存在"会漏判 ——
+            // 有 login 没 page 时检查会通过，直到启动时才失败
+            let saved = secret::load_key(&secrets, secret::KEY_PAGE)
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            if !saved {
+                problems.push("「页面访问密码」尚未录入，请在界面填写后保存".into());
+            }
         }
     }
 

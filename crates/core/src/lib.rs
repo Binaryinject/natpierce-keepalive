@@ -1,4 +1,4 @@
-//! natpierce-core —— 皎月连保活守护的核心库
+//! natpierce-core —— natpierce-keepalive 核心库
 //!
 //! 提供与界面无关的全部业务能力：
 //!
@@ -31,5 +31,8 @@ pub use keepalive::{Health, Keepalive};
 /// 版本号（取自 Cargo.toml）
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// 程序显示名
-pub const APP_NAME: &str = "皎月连保活守护";
+/// 程序名（用于配置目录、安装目录、托盘提示等）
+///
+/// 一律使用英文项目名：中文路径会导致 NSIS 安装包名被 mangle、
+/// 命令行转义与编码问题，且跨环境不稳定。
+pub const APP_NAME: &str = "natpierce-keepalive";

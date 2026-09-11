@@ -13,7 +13,7 @@ use std::process::Command;
 /// 服务名（SCM 内部标识）
 pub const SERVICE_NAME: &str = "NatpierceKeepalive";
 /// 服务显示名
-pub const DISPLAY_NAME: &str = "皎月连保活守护";
+pub const DISPLAY_NAME: &str = "Natpierce Keepalive";
 /// 服务描述
 pub const DESCRIPTION: &str = "自动检测并恢复皎月连 (natpierce) 的服务端/客户端连接";
 

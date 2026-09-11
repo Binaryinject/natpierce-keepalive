@@ -9,7 +9,7 @@
       processorArchitecture="*" />
 
   <!-- 版本信息（显示在文件属性里） -->
-  <description>皎月连保活守护 - natpierce keepalive daemon</description>
+  <description>natpierce-keepalive - natpierce keepalive daemon</description>
 
   <!--
     权限声明：asInvoker（普通用户权限）

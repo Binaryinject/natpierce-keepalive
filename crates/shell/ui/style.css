@@ -1,4 +1,4 @@
-/* 皎月连保活守护 — 界面样式
+/* natpierce-keepalive — 界面样式
    深色主题，参考现代桌面应用观感 */
 
 :root {
@@ -420,3 +420,8 @@ label.check span { font-size: 13px; color: var(--text); }
 }
 .log-line.lv-WARN  { color: var(--warn); }
 .log-line.lv-ERROR { color: var(--err); font-weight: 600; }
+
+/* ---------- 密码保存状态提示 ---------- */
+.pwd-hint { font-size: 12px; }
+.pwd-hint.ok      { color: var(--ok); }
+.pwd-hint.missing { color: var(--warn); font-weight: 600; }

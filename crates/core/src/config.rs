@@ -340,7 +340,7 @@ pub fn status_file_path(config_path: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".status"))
 }
 
-/// 唯一的配置目录：`%LOCALAPPDATA%\皎月连保活守护`
+/// 唯一的配置目录：`%LOCALAPPDATA%\natpierce-keepalive`
 ///
 /// 优先 `LOCALAPPDATA`（Tauri currentUser 安装位置），
 /// 缺失时退回 `APPDATA`，两者都没有才用当前目录。
@@ -368,7 +368,7 @@ pub fn fallback_config_path() -> Option<PathBuf> {
 ///
 /// 历史教训：早期版本还会依次探测「当前工作目录」和「exe 所在目录」，
 /// 结果同一台机器上并存多份 config.json（项目根、`target\release`、
-/// `%LOCALAPPDATA%\皎月连保活守护`），界面改了一份、守护进程读另一份，
+/// `%LOCALAPPDATA%\natpierce-keepalive`），界面改了一份、守护进程读另一份，
 /// 表现为「改了配置没反应」。这两个来源已废弃 —— 配置文件只有一个位置。
 pub fn resolve_config_path() -> PathBuf {
     if let Ok(p) = std::env::var("NATPIERCE_KEEPALIVE_CONFIG") {
