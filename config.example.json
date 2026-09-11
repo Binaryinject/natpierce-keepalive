@@ -1,0 +1,50 @@
+{
+  "mode": "server",
+
+  "natpierce": {
+    "exe_path": "C:\\Tools\\natpierce\\natpierce.exe",
+    "working_dir": "",
+    "process_name": "natpierce",
+    "start_args": ["-C"]
+  },
+
+  "api": {
+    "url": "ws://127.0.0.1:33272/ws",
+    "fallback_url": "ws://[::1]:33272/ws",
+    "connect_timeout_ms": 8000,
+    "command_timeout_ms": 15000
+  },
+
+  "server": {
+    "page_password": "dpapi",
+    "connection_password": "",
+    "max_clients": 0,
+    "lan_ip": "",
+    "vpn_mode": true,
+    "start_timeout_sec": 45
+  },
+
+  "client": {
+    "target_host_id": "",
+    "target_host_name": "",
+    "connection_password": "",
+    "target_index": 0,
+    "close_server_first": true
+  },
+
+  "keepalive": {
+    "interval_sec": 60,
+    "heartbeat_sec": 15,
+    "fail_threshold": 3,
+    "cooldown_sec": 30,
+    "restart_after_failures": 5,
+    "enabled": true
+  },
+
+  "logging": {
+    "level": "info",
+    "directory": "logs",
+    "retain_days": 30,
+    "console": true
+  }
+}

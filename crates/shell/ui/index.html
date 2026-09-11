@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>皎月连保活守护</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="moon">🌙</span>
+      <div>
+        <h1>皎月连保活守护</h1>
+        <span class="ver" id="app-version">v-</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="badge" id="badge-daemon">保活：检测中</span>
+    </div>
+  </header>
+
+  <!-- 当前使用的配置文件（避免改错文件） -->
+  <div class="cfg-bar">
+    <span class="cfg-label">配置文件</span>
+    <code id="config-path-footer">—</code>
+    <button class="btn tiny" id="btn-open-config-top" title="在资源管理器中打开所在目录">打开目录</button>
+  </div>
+
+  <main>
+    <!-- 配置未完成警告（醒目、不可忽略） -->
+    <section class="card warn-card" id="config-warning" hidden>      <div class="warn-head">
+        <span class="warn-icon">⚠</span>
+        <h2>配置未完成，无法启动保活</h2>
+      </div>
+      <ul class="warn-list" id="config-problems"></ul>
+      <p class="hint">
+        请按下面「皎月连程序」一节点「浏览…」选择 <b>natpierce.exe</b>，
+        并填写「页面访问密码」，然后点底部「保存配置」。
+      </p>
+      <p class="hint cfg-path-line">
+        当前配置文件：<code id="config-path-inline">—</code>
+      </p>
+    </section>
+
+    <!-- 状态卡片 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>运行状态 <span class="probe" id="probe-indicator" hidden>检测中…</span></h2>
+        <div class="row-actions">
+          <button class="btn ghost" id="btn-refresh">刷新</button>
+        </div>
+      </div>
+
+      <div class="status-grid status-grid-wrap">
+        <div class="stat">
+          <span class="stat-label">皎月连进程</span>
+          <span class="stat-value" id="st-process">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">服务端</span>
+          <span class="stat-value" id="st-server">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">账号</span>
+          <span class="stat-value" id="st-account">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">识别码</span>
+          <span class="stat-value mono" id="st-ident">—</span>
+        </div>
+      </div>
+
+      <div class="hosts" id="hosts-box" hidden>
+        <div class="hosts-title">在线主机</div>
+        <ul id="hosts-list"></ul>
+        <p class="hint">把主机名右侧的识别码填入下方「目标识别码」即可锁定目标。</p>
+      </div>
+
+      <div class="alert error" id="status-error" hidden></div>
+    </section>
+
+    <!-- 工作模式 -->
+    <section class="card">
+      <h2>工作模式</h2>
+      <p class="hint">服务端与客户端互斥，同一时刻只能选一个。切换后下方只显示该模式需要的设置。</p>
+      <div class="segmented" id="mode-group">
+        <label class="seg">
+          <input type="radio" name="mode" value="server">
+          <span>
+            <strong>服务端</strong>
+            <em>保活本机 startServer</em>
+          </span>
+        </label>
+        <label class="seg">
+          <input type="radio" name="mode" value="client">
+          <span>
+            <strong>客户端</strong>
+            <em>维持与远端主机的连接</em>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <!-- 服务端专用 -->
+    <section class="card mode-only-server">
+      <h2>服务端设置</h2>
+      <div class="form-grid">
+        <label>
+          <span>页面访问密码 <b class="req">必填</b></span>
+          <input type="password" id="f-page-pwd" placeholder="6-20 位" autocomplete="new-password">
+          <small id="page-pwd-hint">组网模式下必填，用于开启服务端</small>
+        </label>
+        <label>
+          <span>最大连接数</span>
+          <input type="text" id="f-max-clients" placeholder="0 = 无限制">
+          <small>0 表示不限制</small>
+        </label>
+        <label>
+          <span>连接密码</span>
+          <input type="password" id="f-conn-pwd" placeholder="可留空" autocomplete="new-password">
+          <small>其他设备连接你时需要输入的密码</small>
+        </label>
+      </div>
+    </section>
+
+    <!-- 客户端专用 -->
+    <section class="card mode-only-client" hidden>
+      <h2>客户端设置</h2>
+      <div class="form-grid">
+        <label>
+          <span>目标识别码 <b class="req">必填</b></span>
+          <input type="text" id="f-target-id" placeholder="见上方在线主机的 [ID]">
+          <small>推荐用识别码，最精确。也可直接在上方列表点选</small>
+        </label>
+        <label>
+          <span>目标主机名（备用）</span>
+          <input type="text" id="f-target-name" placeholder="识别码为空时按名称匹配">
+          <small>识别码填了就无需此项</small>
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="f-close-server">
+        <span>连接前自动停掉本机服务端（推荐）</span>
+      </label>
+    </section>
+
+    <!-- 皎月连程序 -->
+    <section class="card">
+      <h2>皎月连程序</h2>
+      <div class="form-grid">
+        <label class="wide">
+          <span>natpierce.exe 路径</span>
+          <div class="file-row">
+            <input type="text" id="f-exe-path" placeholder="点右侧「浏览…」选择皎月连主程序">
+            <button class="btn ghost" id="btn-browse-exe">浏览…</button>
+          </div>
+          <small>必填，指向皎月连主程序（通常名为 natpierce.exe）</small>
+        </label>
+        <label class="wide">
+          <span>工作目录（可选）</span>
+          <div class="file-row">
+            <input type="text" id="f-workdir" placeholder="留空 = 自动使用 exe 所在目录">
+            <button class="btn ghost" id="btn-browse-dir">浏览…</button>
+          </div>
+        </label>
+        <label>
+          <span>进程名</span>
+          <input type="text" id="f-process-name" placeholder="natpierce">
+        </label>
+        <label>
+          <span>启动参数</span>
+          <input type="text" id="f-start-args" placeholder="-C">
+        </label>
+        <label>
+          <span>本地接口地址</span>
+          <input type="text" id="f-api-url" placeholder="ws://127.0.0.1:33272/ws">
+        </label>
+      </div>
+    </section>
+
+    <!-- 保活参数 -->
+    <section class="card">
+      <h2>保活参数</h2>
+      <div class="form-grid four">
+        <label>
+          <span>巡检间隔 (秒)</span>
+          <input type="text" id="f-interval" placeholder="60">
+        </label>
+        <label>
+          <span>心跳间隔 (秒)</span>
+          <input type="text" id="f-heartbeat" placeholder="15">
+        </label>
+        <label>
+          <span>失败判定阈值</span>
+          <input type="text" id="f-fail-threshold" placeholder="3">
+        </label>
+        <label>
+          <span>重启进程阈值</span>
+          <input type="text" id="f-restart-after" placeholder="5">
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="f-keepalive-enabled">
+        <span>启用自动保活</span>
+      </label>
+    </section>
+
+    <!-- 系统集成 -->
+    <section class="card">
+      <h2>系统集成</h2>
+      <div class="integrations">
+        <label class="check">
+          <input type="checkbox" id="f-autostart">
+          <span>开机自启（写入注册表 Run 项，无需管理员）</span>
+        </label>
+        <div class="service-info">
+          <span>Windows 服务</span>
+          <span class="badge" id="badge-service">检测中</span>
+        </div>
+      </div>
+      <div class="row-actions left">
+        <button class="btn ghost" id="btn-open-config">打开配置目录</button>
+        <button class="btn ghost" id="btn-open-log">打开日志目录</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- 底部操作条 -->
+  <footer class="bottombar">
+    <div class="save-msg" id="save-msg"></div>
+    <div class="row-actions">
+      <button class="btn ghost" id="btn-hide">隐藏窗口</button>
+      <button class="btn primary" id="btn-save">保存配置</button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

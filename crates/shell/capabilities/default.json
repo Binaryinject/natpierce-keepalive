@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主窗口所需的权限：调用自定义命令、隐藏/显示窗口、监听事件",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-center",
+    "core:window:allow-set-background-color",
+    "core:event:default",
+    "dialog:allow-open",
+    "dialog:allow-message",
+    "dialog:allow-confirm"
+  ]
+}

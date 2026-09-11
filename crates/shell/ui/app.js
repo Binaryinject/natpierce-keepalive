@@ -1,0 +1,437 @@
+// 皎月连保活守护 — 前端逻辑
+// 通过 Tauri 的 invoke 调用 Rust 后端命令
+
+// ---------- Tauri API 安全获取 ----------
+// Tauri 2 默认不注入 window.__TAURI__，需要在 tauri.conf.json 里开启
+// app.withGlobalTauri。这里做容错，避免拿不到 API 时整个脚本崩掉。
+function tauriApi() {
+  return window.__TAURI__ || null;
+}
+
+/** 调用后端命令（带友好错误） */
+async function invoke(cmd, args) {
+  const api = tauriApi();
+  if (!api || !api.core) {
+    throw new Error('Tauri API 不可用：请在 tauri.conf.json 中开启 app.withGlobalTauri');
+  }
+  return api.core.invoke(cmd, args);
+}
+
+/** 隐藏当前窗口 */
+async function hideWindow() {
+  const api = tauriApi();
+  if (!api || !api.window) return;
+  await api.window.getCurrentWindow().hide();
+}
+
+/** 监听后端事件 */
+async function listenEvent(name, handler) {
+  const api = tauriApi();
+  if (!api || !api.event) return;
+  await api.event.listen(name, handler);
+}
+
+/**
+ * 打开文件/目录选择对话框
+ * 依赖 tauri-plugin-dialog
+ */
+async function pickPath({ directory = false, filters = [] } = {}) {
+  const api = tauriApi();
+  if (!api || !api.dialog) {
+    throw new Error('文件对话框不可用：请确认已启用 tauri-plugin-dialog');
+  }
+  const opts = { directory, multiple: false, title: directory ? '选择目录' : '选择文件' };
+  if (!directory && filters.length) opts.filters = filters;
+
+  const picked = await api.dialog.open(opts);
+  if (!picked) return null;                       // 用户取消
+  return Array.isArray(picked) ? picked[0] : picked;
+}
+
+// ---------- 工具 ----------
+const $ = (id) => document.getElementById(id);
+
+function setBadge(el, text, kind) {
+  el.textContent = text;
+  el.className = 'badge' + (kind ? ' ' + kind : '');
+}
+
+function setStat(el, text, kind) {
+  el.textContent = text;
+  el.className = 'stat-value' + (kind ? ' ' + kind : '');
+}
+
+function showMsg(text, isError) {
+  const el = $('save-msg');
+  el.textContent = text;
+  el.className = 'save-msg' + (isError ? ' err' : '');
+  if (text) {
+    clearTimeout(showMsg._t);
+    showMsg._t = setTimeout(() => { el.textContent = ''; }, 5000);
+  }
+}
+
+/** 把异常转成可读字符串 */
+function errText(e) {
+  if (e == null) return '未知错误';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  try { return JSON.stringify(e); } catch (_) { return String(e); }
+}
+
+// ---------- 表单 ↔ 配置 ----------
+// ⚠️ 字段名必须与 Rust 端 ConfigView 的 serde 输出一致（camelCase），
+//    否则 save_config 会报 "missing field"。
+const FIELDS = [
+  'exePath', 'workingDir', 'processName', 'startArgs', 'apiUrl',
+  'maxClients', 'intervalSec', 'heartbeatSec', 'failThreshold',
+  'restartAfterFailures', 'targetHostId', 'targetHostName',
+];
+const BOOLS = ['closeServerFirst', 'keepaliveEnabled'];
+
+// 字段名(camelCase) → DOM id：exePath → f-exe-path
+const idOf = (k) => 'f-' + k.replace(/([A-Z])/g, '-$1').toLowerCase();
+
+let currentConfig = null;
+/** 最近一次配置校验结果 */
+let configCheck = { ok: true, problems: [] };
+
+/** 渲染配置警告横幅 + 更新启动按钮状态 */
+function renderConfigCheck(check) {
+  configCheck = check || { ok: true, problems: [] };
+
+  const box = $('config-warning');
+  const list = $('config-problems');
+
+  if (configCheck.ok) {
+    box.hidden = true;
+  } else {
+    box.hidden = false;
+    list.innerHTML = '';
+    (configCheck.problems || []).forEach((p) => {
+      const li = document.createElement('li');
+      li.textContent = p;
+      list.appendChild(li);
+    });
+  }
+}
+
+/** 显示/隐藏"检测中"指示 */
+function setProbing(on) {
+  const el = $('probe-indicator');
+  if (el) el.hidden = !on;
+  const box = $('status-grid-wrap');
+  if (box) box.classList.toggle('probing', on);
+}
+
+/** 重新校验配置 */
+async function refreshConfigCheck() {
+  try {
+    const check = await invoke('check_config');
+    renderConfigCheck(check);
+    return check;
+  } catch (e) {
+    // 校验命令都失败时不阻塞用户，仅记录
+    console.error('check_config 失败', e);
+    return { ok: true, problems: [] };
+  }
+}
+
+function fillForm(cfg) {
+  currentConfig = cfg;
+  FIELDS.forEach((k) => {
+    const el = $(idOf(k));
+    if (el) el.value = cfg[k] ?? '';
+  });
+  BOOLS.forEach((k) => {
+    const el = $(idOf(k));
+    if (el) el.checked = !!cfg[k];
+  });
+
+  // 模式
+  const modeRadio = document.querySelector(`input[name="mode"][value="${cfg.mode}"]`);
+  if (modeRadio) modeRadio.checked = true;
+  updateModeVisibility();
+
+  // 密码
+  $('f-page-pwd').value = '';
+  $('f-conn-pwd').value = '';
+  $('page-pwd-hint').textContent = cfg.hasPagePassword
+    ? '已加密保存，留空则不修改'
+    : '组网模式下必填，用于开启服务端';
+
+  $('f-autostart').checked = false; // 稍后由 autostart_status 填
+}
+
+function readForm() {
+  const view = { mode: document.querySelector('input[name="mode"]:checked')?.value || 'server' };
+  FIELDS.forEach((k) => {
+    const el = $(idOf(k));
+    if (el) view[k] = el.value;
+  });
+  BOOLS.forEach((k) => {
+    const el = $(idOf(k));
+    if (el) view[k] = el.checked;
+  });
+  view.pagePassword = $('f-page-pwd').value;
+  view.connectionPassword = $('f-conn-pwd').value;
+  view.hasPagePassword = currentConfig?.hasPagePassword ?? false;
+
+  // 直接发 camelCase：Rust 端 ConfigView 标注了 `rename_all = "camelCase"`，
+  // Tauri 命令参数即按该规则反序列化。（曾经错误地转成 snake_case，
+  // 导致 `invalid args 'view' ...: missing field 'exePath'`）
+  return view;
+}
+
+/**
+ * 根据工作模式显示/隐藏对应区块
+ * - 服务端模式：只显示服务端设置
+ * - 客户端模式：只显示客户端设置
+ */
+function updateModeVisibility() {
+  const mode = document.querySelector('input[name="mode"]:checked')?.value || 'server';
+  const isClient = mode === 'client';
+
+  document.querySelectorAll('.mode-only-server').forEach((el) => {
+    el.hidden = isClient;
+  });
+  document.querySelectorAll('.mode-only-client').forEach((el) => {
+    el.hidden = !isClient;
+  });
+}
+
+// ---------- 状态渲染 ----------
+function renderStatus(st) {
+  // 徽章
+  setBadge($('badge-daemon'),
+    '保活：' + (st.daemonRunning ? '运行中' : '已停止'),
+    st.daemonRunning ? 'ok' : 'warn');
+  // 状态格
+  setStat($('st-process'),
+    st.processAlive ? '运行中' : '未运行',
+    st.processAlive ? 'ok' : 'err');
+
+  if (!st.apiReachable) {
+    setStat($('st-server'), '接口未就绪', 'warn');
+  } else if (st.serverRunning === true) {
+    setStat($('st-server'), '已启动', 'ok');
+  } else if (st.serverRunning === false) {
+    setStat($('st-server'), '未启动', 'warn');
+  } else {
+    setStat($('st-server'), '未知', '');
+  }
+
+  setStat($('st-account'), st.account || '—');
+  setStat($('st-ident'), st.identification || '—');
+
+  // 在线主机
+  const box = $('hosts-box');
+  const list = $('hosts-list');
+  if (st.hosts && st.hosts.length) {
+    box.hidden = false;
+    list.innerHTML = '';
+    st.hosts.forEach((h) => {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = h.name || '(未命名)';
+      const id = document.createElement('span');
+      id.className = 'id';
+      id.textContent = h.id;
+      id.title = '点击填入「目标识别码」';
+      id.onclick = () => {
+        $('f-target-id').value = h.id;
+        $('f-target-name').value = h.name || '';
+        showMsg(`已选择目标：${h.name}`, false);
+      };
+      li.append(name, id);
+      list.appendChild(li);
+    });
+  } else {
+    box.hidden = true;
+  }
+
+  // 错误
+  const errBox = $('status-error');
+  if (st.error) {
+    errBox.hidden = false;
+    errBox.textContent = st.apiReachable
+      ? `${st.error}`
+      : `无法连接本地接口：${st.error}\n（若皎月连未运行属正常，保活会自动拉起）`;
+  } else {
+    errBox.hidden = true;
+  }
+
+
+}
+
+// ---------- 数据加载 ----------
+async function loadConfig() {
+  try {
+    const cfg = await invoke('get_config');
+    fillForm(cfg);
+  } catch (e) {
+    showMsg('读取配置失败：' + e, true);
+  }
+}
+
+async function loadStatus() {
+  try {
+    const st = await invoke('get_status');
+    renderStatus(st);
+  } catch (e) {
+    showMsg('获取状态失败：' + e, true);
+  }
+}
+
+async function loadMisc() {
+  try {
+    const info = await invoke('app_info');
+    $('app-version').textContent = 'v' + info.version;
+    document.title = `${info.name} v${info.version}`;
+    // 把实际使用的配置文件路径显示出来 —— 便于发现"改错了文件"
+    if (info.configPath) {
+      const el = $('config-path-inline');
+      if (el) el.textContent = info.configPath;
+      const el2 = $('config-path-footer');
+      if (el2) el2.textContent = info.configPath;
+    }
+  } catch (_) {}
+
+  try {
+    $('f-autostart').checked = await invoke('autostart_status');
+  } catch (_) {}
+
+  try {
+    const svc = await invoke('service_status');
+    setBadge($('badge-service'),
+      svc.running ? '运行中' : (svc.installed ? '已安装未运行' : '未安装'),
+      svc.running ? 'ok' : '');
+  } catch (_) {}
+}
+
+// ---------- 事件绑定 ----------
+$('btn-refresh').onclick = () => loadStatus();
+
+$('btn-save').onclick = async () => {
+  try {
+    const view = readForm();
+    const msg = await invoke('save_config', { view });
+    showMsg(msg, false);
+    await loadConfig();
+    await refreshConfigCheck();   // 保存后重新校验
+  } catch (e) {
+    showMsg('保存失败：' + errText(e), true);
+  }
+};
+
+// 保活默认随程序自动开启（配置齐全时），界面不提供启停按钮。
+// 需要临时停止：托盘菜单 →「退出」，或删除守护进程。
+// ---------- 文件选择 ----------
+/** 从完整路径里取出文件名（不含扩展名）*/
+function stemOf(p) {
+  const base = p.split(/[\\/]/).pop() || '';
+  return base.replace(/\.exe$/i, '');
+}
+/** 从完整路径里取出所在目录 */
+function dirOf(p) {
+  const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+  return i > 0 ? p.slice(0, i) : '';
+}
+
+// 选择 natpierce.exe
+$('btn-browse-exe').onclick = async () => {
+  try {
+    const picked = await pickPath({
+      filters: [{ name: '可执行文件', extensions: ['exe'] }],
+    });
+    if (!picked) return;
+
+    $('f-exe-path').value = picked;
+
+    // 自动推导：进程名 = 文件名去 .exe；工作目录 = 所在目录
+    const stem = stemOf(picked);
+    if (stem) $('f-process-name').value = stem;
+    const dir = dirOf(picked);
+    if (dir && !$('f-workdir').value.trim()) $('f-workdir').value = dir;
+
+    // 顺带提示文件名是否像皎月连
+    if (!/natpierce/i.test(stem)) {
+      showMsg(`提示：文件名是「${stem}」，皎月连通常叫 natpierce.exe，请确认选对了`, true);
+    } else {
+      showMsg(`已选择：${stem}，记得点「保存配置」`, false);
+    }
+  } catch (e) {
+    showMsg(errText(e), true);
+  }
+};
+
+// 选择工作目录
+$('btn-browse-dir').onclick = async () => {
+  try {
+    const picked = await pickPath({ directory: true });
+    if (!picked) return;
+    $('f-workdir').value = picked;
+    showMsg('已选择工作目录，记得点「保存配置」', false);
+  } catch (e) {
+    showMsg(errText(e), true);
+  }
+};
+
+document.querySelectorAll('input[name="mode"]').forEach((r) => {
+  r.onchange = updateModeVisibility;
+});
+
+// 托盘菜单的「立即刷新」
+listenEvent('refresh', () => loadStatus());
+
+// 后端主动推送的状态（取代轮询，操作完成即刷新）
+listenEvent('status-changed', (ev) => {
+  try {
+    renderStatus(ev.payload);
+    setProbing(false);
+  } catch (e) {
+    console.error('渲染推送状态失败', e);
+  }
+});
+
+// 探测阶段：probing → 显示"检测中…"
+listenEvent('probe-state', (ev) => {
+  setProbing(ev.payload === 'probing');
+});
+
+// 兜底：任何未捕获异常都显示出来，避免"界面无反应却不知为何"
+window.addEventListener('error', (ev) => {
+  showMsg('界面错误：' + errText(ev.error || ev.message), true);
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  showMsg('异步错误：' + errText(ev.reason), true);
+});
+
+// ---------- 启动 ----------
+(async function init() {
+  if (!tauriApi()) {
+    $('status-error').hidden = false;
+    $('status-error').textContent =
+      '未检测到 Tauri API（window.__TAURI__）。\n' +
+      '请确认 tauri.conf.json 中已设置 app.withGlobalTauri = true 后重新编译。';
+    return;
+  }
+
+  // 把窗口背景设成与界面一致的深色，
+  // 避免 WebView2 默认纯黑背景在加载前/渲染异常时显示成"黑屏窗口"
+  try {
+    const win = tauriApi().window.getCurrentWindow();
+    if (win.setBackgroundColor) {
+      // 与 CSS 的 --bg 一致 (0xRRGGBB)
+      await win.setBackgroundColor({ red: 20, green: 22, blue: 28, alpha: 255 });
+    }
+  } catch (_) { /* 旧版本不支持则忽略 */ }
+
+  await loadConfig();
+  await loadMisc();
+  await loadStatus();
+  await refreshConfigCheck();
+
+  // 状态由后端每 3 秒主动推送（status-changed 事件），这里不再轮询。
+  // 这样操作完成时能立即反映，而不用等下一个轮询周期。
+})();

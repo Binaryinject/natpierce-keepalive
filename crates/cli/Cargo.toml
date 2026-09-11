@@ -1,0 +1,25 @@
+[package]
+name = "natpierce-cli"
+description = "皎月连保活守护 — 命令行与守护进程"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "natpierce-keepalived"
+path = "src/main.rs"
+
+[dependencies]
+natpierce-core = { path = "../core" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_Storage_FileSystem",
+] }

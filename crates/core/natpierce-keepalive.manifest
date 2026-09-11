@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+
+  <!-- 程序集标识 -->
+  <assemblyIdentity
+      type="win32"
+      name="Binaryinject.natpierce-keepalive"
+      version="0.1.0.0"
+      processorArchitecture="*" />
+
+  <!-- 版本信息（显示在文件属性里） -->
+  <description>皎月连保活守护 - natpierce keepalive daemon</description>
+
+  <!--
+    权限声明：asInvoker（普通用户权限）
+
+    这里**故意不要求管理员权限**，原因有两点：
+
+    1. `cargo test` 生成的测试可执行文件会继承本 manifest。若声明强制提权，
+       测试进程会以 "请求的操作需要提升 (os error 740)" 直接失败，
+       整个测试套件无法运行。
+
+    2. 日常使用（托盘常驻、查询状态、看日志）根本不需要管理员权限，
+       强制提权只会让用户每次启动都吃一个 UAC 弹窗。
+
+    那什么时候需要提权？
+    只有"拉起 natpierce.exe"这一步 —— 因为 natpierce.exe 自身声明了
+    requireAdministrator，普通权限进程无法启动它。
+
+    本程序采用**按需提权**：仅在该操作时通过 ShellExecuteW("runas")
+    触发一次 UAC。若想完全避免 UAC，请安装为 Windows 服务（以 SYSTEM 运行）。
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!-- 兼容性声明 -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />
+      <!-- Windows 8 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />
+      <!-- Windows 7 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />
+    </application>
+  </compatibility>
+
+  <!-- 使用 Common Controls v6（现代控件外观） -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+          type="win32"
+          name="Microsoft.Windows.Common-Controls"
+          version="6.0.0.0"
+          processorArchitecture="*"
+          publicKeyToken="6595b64144ccf1df"
+          language="*" />
+    </dependentAssembly>
+  </dependency>
+
+  <!-- 高 DPI 感知 -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">permonitorv2,permonitor</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+
+</assembly>

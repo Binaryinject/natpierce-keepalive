@@ -1,0 +1,31 @@
+# ---- 构建产物 ----
+/target
+**/*.rs.bk
+node_modules/
+
+# ---- Tauri 自动生成的 schema ----
+crates/shell/gen/
+
+# ---- 敏感配置 (绝不提交!) ----
+# config.json 可能含密码，一律忽略；只提交 config.example.json
+/config.json
+/secrets.json
+/secrets.dpapi
+/config.local.json
+*.secret.json
+
+# ---- 日志 ----
+/logs
+*.log
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+
+# ---- 本地测试残留 ----
+/tmp
+*.tmp
