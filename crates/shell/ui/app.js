@@ -337,13 +337,6 @@ async function loadMisc() {
     const info = await invoke('app_info');
     $('app-version').textContent = 'v' + info.version;
     document.title = `${info.name} v${info.version}`;
-    // 把实际使用的配置文件路径显示出来 —— 便于发现"改错了文件"
-    if (info.configPath) {
-      const el = $('config-path-inline');
-      if (el) el.textContent = info.configPath;
-      const el2 = $('config-path-footer');
-      if (el2) el2.textContent = info.configPath;
-    }
   } catch (_) {}
 
   try {
@@ -445,22 +438,8 @@ $('btn-browse-dir').onclick = async () => {
   }
 };
 
-// ---------- 在资源管理器里打开目录 ----------
-/**
- * which = 'log' 打开日志目录，其它值打开配置文件所在目录
- */
-async function openDir(which) {
-  try {
-    await invoke('open_dir', { which });
-  } catch (e) {
-    showMsg(errText(e), true);
-  }
-}
-
-// 三个入口都绑上；用可选链，避免某个按钮缺失时整段脚本中断
-$('btn-open-config')?.addEventListener('click', () => openDir('config'));
-$('btn-open-log')?.addEventListener('click', () => openDir('log'));
-$('btn-open-config-top')?.addEventListener('click', () => openDir('config'));
+// 注：原先这里有「打开配置目录 / 打开日志目录」按钮。
+// 配置路径已统一为唯一位置、日志也能在界面里直接看到，这些入口已移除。
 
 // ---------- 运行日志 ----------
 let lastLogTotal = -1;

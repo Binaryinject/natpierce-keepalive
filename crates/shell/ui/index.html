@@ -21,13 +21,6 @@
     </div>
   </header>
 
-  <!-- 当前使用的配置文件（避免改错文件） -->
-  <div class="cfg-bar">
-    <span class="cfg-label">配置文件</span>
-    <code id="config-path-footer">—</code>
-    <button class="btn tiny" id="btn-open-config-top" title="在资源管理器中打开所在目录">打开目录</button>
-  </div>
-
   <main>
     <!-- 配置未完成警告（醒目、不可忽略） -->
     <section class="card warn-card" id="config-warning" hidden>      <div class="warn-head">
@@ -37,9 +30,6 @@
       <ul class="warn-list" id="config-problems"></ul>
       <!-- 提示文案按当前模式动态生成（客户端模式不需要页面访问密码） -->
       <p class="hint" id="config-hint"></p>
-      <p class="hint cfg-path-line">
-        当前配置文件：<code id="config-path-inline">—</code>
-      </p>
     </section>
 
     <!-- 状态卡片 -->
@@ -271,10 +261,6 @@
           <span>Windows 服务</span>
           <span class="badge" id="badge-service">检测中</span>
         </div>
-      </div>
-      <div class="row-actions left">
-        <button class="btn ghost" id="btn-open-config">打开配置目录</button>
-        <button class="btn ghost" id="btn-open-log">打开日志目录</button>
       </div>
     </section>
   </main>
