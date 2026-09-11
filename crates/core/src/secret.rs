@@ -376,4 +376,38 @@ mod tests {
         let plain = dpapi::unprotect(&cipher).expect("decrypt");
         assert_eq!(String::from_utf8(plain).unwrap(), secret);
     }
+
+    /// 诊断用：逐环节拆解真实 vault 的解密过程
+    #[cfg(windows)]
+    #[test]
+    fn probe_real_vault() {
+        let p = std::path::Path::new(r"D:\GIT\natpierce-keepalive\target\release\secrets.dpapi");
+        if !p.exists() {
+            eprintln!("跳过：{} 不存在", p.display());
+            return;
+        }
+        let text = std::fs::read_to_string(p).unwrap();
+        eprintln!("[1] 文件 {} 字节，前 60 字符: {:?}", text.len(), &text[..text.len().min(60)]);
+
+        let parsed = serde_json::from_str::<std::collections::HashMap<String, String>>(&text);
+        eprintln!("[2] serde_json 解析: {:?}", parsed.as_ref().map(|m| m.keys().cloned().collect::<Vec<_>>()));
+
+        let vault = load_vault(p);
+        eprintln!("[3] load_vault keys = {:?}", vault.keys().collect::<Vec<_>>());
+
+        for (k, v) in &vault {
+            eprintln!("--- key={k}, base64 长度={} ---", v.len());
+            match base64_decode(v) {
+                Ok(b) => {
+                    eprintln!("[4] base64 解码 = {} 字节, 头 8 字节 = {:02x?}", b.len(), &b[..b.len().min(8)]);
+                    eprintln!("    期望 230 字节: {}", if b.len() == 230 { "OK" } else { "*** 不符 ***" });
+                    match dpapi::unprotect(&b) {
+                        Ok(plain) => eprintln!("[5] DPAPI 解密成功 = {:?}", String::from_utf8_lossy(&plain)),
+                        Err(e) => eprintln!("[5] DPAPI 解密失败 = {e:?}"),
+                    }
+                }
+                Err(e) => eprintln!("[4] base64 解码失败 = {e:?}"),
+            }
+        }
+    }
 }

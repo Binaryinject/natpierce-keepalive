@@ -386,12 +386,83 @@ $('btn-browse-dir').onclick = async () => {
   }
 };
 
+// ---------- 在资源管理器里打开目录 ----------
+/**
+ * which = 'log' 打开日志目录，其它值打开配置文件所在目录
+ */
+async function openDir(which) {
+  try {
+    await invoke('open_dir', { which });
+  } catch (e) {
+    showMsg(errText(e), true);
+  }
+}
+
+// 三个入口都绑上；用可选链，避免某个按钮缺失时整段脚本中断
+$('btn-open-config')?.addEventListener('click', () => openDir('config'));
+$('btn-open-log')?.addEventListener('click', () => openDir('log'));
+$('btn-open-config-top')?.addEventListener('click', () => openDir('config'));
+
+// ---------- 运行日志 ----------
+let lastLogTotal = -1;
+
+/**
+ * 拉取守护进程日志尾部并渲染到界面上。
+ * @param {boolean} force 行数没变时也强制重渲染（手动刷新用）
+ */
+async function loadLogs(force) {
+  try {
+    const data = await invoke('read_logs', { lines: 200 });
+    const box = $('log-view');
+    if (!box) return;
+
+    const pathEl = $('log-path');
+    if (pathEl) pathEl.textContent = data.path || '—';
+
+    if (!data.exists) {
+      box.replaceChildren();
+      const d = document.createElement('div');
+      d.className = 'log-line lv-WARN';
+      d.textContent = '还没有日志文件 —— 启动保活后，这里会显示完整的启动过程。';
+      box.appendChild(d);
+      lastLogTotal = -1;
+      return;
+    }
+
+    // 行数没变就不重渲染：省开销，也不会打断用户正在看的滚动位置
+    if (!force && data.total === lastLogTotal) return;
+    lastLogTotal = data.total;
+
+    const frag = document.createDocumentFragment();
+    for (const line of data.lines) {
+      const div = document.createElement('div');
+      let lv = 'INFO';
+      if (line.includes(' ERROR ')) lv = 'ERROR';
+      else if (line.includes(' WARN ')) lv = 'WARN';
+      div.className = 'log-line lv-' + lv;
+      div.textContent = line; // textContent 自动转义，日志内容不会破坏页面结构
+      frag.appendChild(div);
+    }
+    box.replaceChildren(frag);
+
+    if ($('log-autoscroll')?.checked) box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    // 日志读取失败不能影响主界面
+    console.error('读取日志失败', e);
+  }
+}
+
+$('btn-log-refresh')?.addEventListener('click', () => loadLogs(true));
+
 document.querySelectorAll('input[name="mode"]').forEach((r) => {
   r.onchange = updateModeVisibility;
 });
 
 // 托盘菜单的「立即刷新」
-listenEvent('refresh', () => loadStatus());
+listenEvent('refresh', () => {
+  loadStatus();
+  loadLogs(true);
+});
 
 // 后端主动推送的状态（取代轮询，操作完成即刷新）
 listenEvent('status-changed', (ev) => {
@@ -401,6 +472,8 @@ listenEvent('status-changed', (ev) => {
   } catch (e) {
     console.error('渲染推送状态失败', e);
   }
+  // 日志跟着状态一起刷：启动/重连过程能立刻看到
+  loadLogs(false);
 });
 
 // 探测阶段：probing → 显示"检测中…"
@@ -440,6 +513,7 @@ window.addEventListener('unhandledrejection', (ev) => {
   await loadMisc();
   await loadStatus();
   await refreshConfigCheck();
+  await loadLogs(true);
 
   // 状态由后端每 3 秒主动推送（status-changed 事件），这里不再轮询。
   // 这样操作完成时能立即反映，而不用等下一个轮询周期。

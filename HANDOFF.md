@@ -25,12 +25,25 @@
 |---|---|
 | 皎月连路径 | `D:\Tools\natpierce-win-v1.06\natpierce.exe` |
 | 皎月连登录账号 | `274089056@qq.com` |
+| 皎月连登录密码 | 已存 DPAPI（明文 `wbn180115939935`） |
+| 页面访问密码 | `111111`（组网模式下开服务端要用） |
 | 识别码 | `48672718` |
 | 本地接口 | `ws://127.0.0.1:33272/ws` |
-| **配置文件（安装版）** | `C:\Users\wbn\AppData\Local\皎月连保活守护\config.json` |
-| 配置文件（开发版） | `D:\GIT\natpierce-keepalive\target\release\config.json` |
+| **唯一配置目录** | `C:\Users\wbn\AppData\Local\皎月连保活守护\` |
 
-⚠️ **存在多份 config.json**，界面顶部会显示实际使用的路径。这是历史上多次"改配置不生效"的原因。
+### 唯一配置（已统一，2026-09-11）
+
+`config.json`、`secrets.dpapi`、`logs\`、**以及两个 exe** 全都只在这一个目录。
+
+`resolve_config_path()` 现在只认这个位置（外加 `NATPIERCE_KEEPALIVE_CONFIG` 环境变量可覆盖）。
+早期版本还会依次探测「当前工作目录」和「exe 所在目录」，导致项目根、`target\release`、
+`%LOCALAPPDATA%` 三份 config.json 并存 —— 界面改了一份、守护进程读另一份，
+表现为「改了配置没反应」。**该行为已废弃，改完请从唯一目录启动。**
+
+> 皎月连自身的配置在 `D:\Tools\natpierce-win-v1.06\config`（明文 JSON，无扩展名）。
+> 其中 `WebPwd`/`Auto_pwd`/`Client_pwd` 是 16 字节加密值、`Global_pwd` 是 64 字节，
+> **算法未逆出**，无法生成 —— 但不需要：密码走 DPAPI 存我们这边即可。
+> 备份见 `natpierce-config-backup.json`（已 gitignore）。
 
 ---
 

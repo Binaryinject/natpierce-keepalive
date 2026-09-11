@@ -14,6 +14,10 @@ crates/shell/gen/
 /config.local.json
 *.secret.json
 
+# 配置整合时的本地备份 + 皎月连自身 config 的备份（含密码哈希）
+/_config_backup_*/
+/natpierce-config-backup.json
+
 # ---- 日志 ----
 /logs
 *.log

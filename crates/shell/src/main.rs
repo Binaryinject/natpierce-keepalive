@@ -530,6 +530,52 @@ fn open_dir(which: String, state: tauri::State<'_, Mutex<AppState>>) -> Result<(
     Ok(())
 }
 
+/// 读取保活日志尾部，供界面直接显示
+///
+/// 取日志目录里最新的一个 `keepalive.log.*`，返回最后 `lines` 行。
+/// 守护进程是独立进程写文件，界面按需读取即可，无需额外 IPC。
+#[tauri::command]
+fn read_logs(
+    lines: Option<usize>,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let st = state.lock().map_err(|e| e.to_string())?;
+    let cfg = config::load_config_from(&st.config_path)
+        .map(|l| l.config)
+        .unwrap_or_default();
+    let dir = logging::resolve_log_dir(&cfg, &st.config_path);
+    let want = lines.unwrap_or(200).clamp(1, 2000);
+
+    let latest = std::fs::read_dir(&dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("keepalive.log"))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .max_by_key(|(t, _)| *t);
+
+    let Some((_, path)) = latest else {
+        return Ok(serde_json::json!({
+            "exists": false,
+            "path": dir.display().to_string(),
+            "total": 0,
+            "lines": [],
+        }));
+    };
+
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let all: Vec<&str> = text.lines().collect();
+    let start = all.len().saturating_sub(want);
+
+    Ok(serde_json::json!({
+        "exists": true,
+        "path": path.display().to_string(),
+        "total": all.len(),
+        "lines": all[start..].to_vec(),
+    }))
+}
+
 /// 版本信息
 #[tauri::command]
 fn app_info() -> serde_json::Value {
@@ -591,6 +637,7 @@ fn main() {
             service_status,
             check_config,
             open_dir,
+            read_logs,
             app_info,
         ])
         .setup(|app| {

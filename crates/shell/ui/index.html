@@ -81,6 +81,25 @@
       <div class="alert error" id="status-error" hidden></div>
     </section>
 
+    <!-- 运行日志（直接在界面上看启动/保活过程，不用去翻文件） -->
+    <section class="card">
+      <div class="card-head">
+        <h2>运行日志</h2>
+        <div class="row-actions">
+          <label class="chk-inline">
+            <input type="checkbox" id="log-autoscroll" checked>
+            <span>自动滚到底</span>
+          </label>
+          <button class="btn ghost" id="btn-log-refresh">刷新</button>
+        </div>
+      </div>
+      <div class="log-view" id="log-view"><div class="log-line lv-INFO">加载中…</div></div>
+      <p class="hint">
+        显示守护进程最近 200 行日志，随状态自动刷新。
+        日志文件：<code id="log-path">—</code>
+      </p>
+    </section>
+
     <!-- 皎月连账号（自动登录用，两种模式都需要） -->
     <section class="card">
       <h2>皎月连账号</h2>

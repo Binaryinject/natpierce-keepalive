@@ -388,3 +388,35 @@ label.check span { font-size: 13px; color: var(--text); }
 
 /* 加载态 */
 .loading { opacity: .5; pointer-events: none; }
+
+/* ---------- 运行日志 ---------- */
+.chk-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.chk-inline input { margin: 0; cursor: pointer; }
+
+.log-view {
+  margin-top: 10px;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-dim);
+}
+.log-line.lv-WARN  { color: var(--warn); }
+.log-line.lv-ERROR { color: var(--err); font-weight: 600; }

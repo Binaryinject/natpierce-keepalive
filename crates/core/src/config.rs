@@ -340,50 +340,43 @@ pub fn status_file_path(config_path: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".status"))
 }
 
-/// `%APPDATA%\natpierce-keepalive\config.json`，用于 exe 目录不可写时的回退
-pub fn fallback_config_path() -> Option<PathBuf> {
-    dirs_appdata().map(|d| d.join("natpierce-keepalive").join("config.json"))
+/// 唯一的配置目录：`%LOCALAPPDATA%\皎月连保活守护`
+///
+/// 优先 `LOCALAPPDATA`（Tauri currentUser 安装位置），
+/// 缺失时退回 `APPDATA`，两者都没有才用当前目录。
+pub fn config_dir() -> PathBuf {
+    let base = std::env::var("LOCALAPPDATA")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("APPDATA").ok().filter(|s| !s.is_empty()));
+    match base {
+        Some(d) => PathBuf::from(d).join(crate::APP_NAME),
+        None => PathBuf::from("."),
+    }
 }
 
-/// 解析配置文件的搜索顺序：
-/// 1. 环境变量 `NATPIERCE_KEEPALIVE_CONFIG` 指定
-/// 2. **当前工作目录** `./config.json`（最符合直觉：你在哪个目录敲命令就找哪里的配置）
-/// 3. exe 所在目录 `config.json`
-/// 4. `%APPDATA%\natpierce-keepalive\config.json`
+/// 唯一的配置文件路径：`<配置目录>\config.json`
+pub fn fallback_config_path() -> Option<PathBuf> {
+    Some(config_dir().join("config.json"))
+}
+
+/// 解析配置文件路径。
 ///
-/// 都不存在时，返回 exe 所在目录（便携优先），exe 目录不可写时由调用方
-/// 通过 [`fallback_config_path`] 回退到 APPDATA。
+/// 顺序：
+/// 1. 环境变量 `NATPIERCE_KEEPALIVE_CONFIG`（多实例 / 测试用）
+/// 2. `<配置目录>\config.json` —— **唯一权威位置**
+///
+/// 历史教训：早期版本还会依次探测「当前工作目录」和「exe 所在目录」，
+/// 结果同一台机器上并存多份 config.json（项目根、`target\release`、
+/// `%LOCALAPPDATA%\皎月连保活守护`），界面改了一份、守护进程读另一份，
+/// 表现为「改了配置没反应」。这两个来源已废弃 —— 配置文件只有一个位置。
 pub fn resolve_config_path() -> PathBuf {
     if let Ok(p) = std::env::var("NATPIERCE_KEEPALIVE_CONFIG") {
         if !p.is_empty() {
             return PathBuf::from(p);
         }
     }
-
-    let cwd_candidate = std::env::current_dir().ok().map(|d| d.join("config.json"));
-    let exe_candidate = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(|p| p.join("config.json")));
-    let appdata_candidate = fallback_config_path();
-
-    // 依次探测已存在的配置
-    for c in [&cwd_candidate, &exe_candidate, &appdata_candidate]
-        .into_iter()
-        .flatten()
-    {
-        if c.exists() {
-            return c.clone();
-        }
-    }
-
-    // 都不存在：优先当前工作目录（命令行场景），其次 exe 目录（双击场景）
-    cwd_candidate
-        .or(exe_candidate)
-        .unwrap_or_else(|| PathBuf::from("config.json"))
-}
-
-fn dirs_appdata() -> Option<PathBuf> {
-    std::env::var("APPDATA").ok().filter(|s| !s.is_empty()).map(PathBuf::from)
+    fallback_config_path().unwrap_or_else(|| PathBuf::from("config.json"))
 }
 
 /// 加载配置
