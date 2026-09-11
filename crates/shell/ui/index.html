@@ -35,10 +35,8 @@
         <h2>配置未完成，无法启动保活</h2>
       </div>
       <ul class="warn-list" id="config-problems"></ul>
-      <p class="hint">
-        请按下面「皎月连程序」一节点「浏览…」选择 <b>natpierce.exe</b>，
-        并填写「页面访问密码」，然后点底部「保存配置」。
-      </p>
+      <!-- 提示文案按当前模式动态生成（客户端模式不需要页面访问密码） -->
+      <p class="hint" id="config-hint"></p>
       <p class="hint cfg-path-line">
         当前配置文件：<code id="config-path-inline">—</code>
       </p>
@@ -168,7 +166,7 @@
         </label>
       </div>
       <label class="check">
-        <input type="checkbox" id="f-auto-start">
+        <input type="checkbox" id="f-auto-start-server">
         <span>自动开启（皎月连自身重开后自动恢复服务，推荐勾选）</span>
       </label>
     </section>
@@ -179,17 +177,17 @@
       <div class="form-grid">
         <label>
           <span>目标识别码 <b class="req">必填</b></span>
-          <input type="text" id="f-target-id" placeholder="见上方在线主机的 [ID]">
+          <input type="text" id="f-target-host-id" placeholder="见上方在线主机的 [ID]">
           <small>推荐用识别码，最精确。也可直接在上方列表点选</small>
         </label>
         <label>
           <span>目标主机名（备用）</span>
-          <input type="text" id="f-target-name" placeholder="识别码为空时按名称匹配">
+          <input type="text" id="f-target-host-name" placeholder="识别码为空时按名称匹配">
           <small>识别码填了就无需此项</small>
         </label>
       </div>
       <label class="check">
-        <input type="checkbox" id="f-close-server">
+        <input type="checkbox" id="f-close-server-first">
         <span>连接前自动停掉本机服务端（推荐）</span>
       </label>
     </section>
@@ -209,7 +207,7 @@
         <label class="wide">
           <span>工作目录（可选）</span>
           <div class="file-row">
-            <input type="text" id="f-workdir" placeholder="留空 = 自动使用 exe 所在目录">
+            <input type="text" id="f-working-dir" placeholder="留空 = 自动使用 exe 所在目录">
             <button class="btn ghost" id="btn-browse-dir">浏览…</button>
           </div>
         </label>
@@ -234,11 +232,11 @@
       <div class="form-grid four">
         <label>
           <span>巡检间隔 (秒)</span>
-          <input type="text" id="f-interval" placeholder="60">
+          <input type="text" id="f-interval-sec" placeholder="60">
         </label>
         <label>
           <span>心跳间隔 (秒)</span>
-          <input type="text" id="f-heartbeat" placeholder="15">
+          <input type="text" id="f-heartbeat-sec" placeholder="15">
         </label>
         <label>
           <span>失败判定阈值</span>
@@ -246,7 +244,7 @@
         </label>
         <label>
           <span>重启进程阈值</span>
-          <input type="text" id="f-restart-after" placeholder="5">
+          <input type="text" id="f-restart-after-failures" placeholder="5">
         </label>
       </div>
       <label class="check">

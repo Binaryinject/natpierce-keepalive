@@ -188,8 +188,15 @@ impl ConfigView {
         if !self.account.trim().is_empty() {
             cfg.account = self.account.trim().to_string();
         }
-        cfg.client.target_host_id = self.target_host_id.trim().to_string();
-        cfg.client.target_host_name = self.target_host_name.trim().to_string();
+        // 只在非空时更新：前端字段名一旦对不上，传来的就是空串，
+        // 无条件覆盖会把用户已经存好的识别码悄悄清掉
+        // （界面上 id 写错那次就是这样，表现为"填了识别码却报未指定"）。
+        if !self.target_host_id.trim().is_empty() {
+            cfg.client.target_host_id = self.target_host_id.trim().to_string();
+        }
+        if !self.target_host_name.trim().is_empty() {
+            cfg.client.target_host_name = self.target_host_name.trim().to_string();
+        }
         cfg.client.close_server_first = self.close_server_first;
         if !self.connection_password.is_empty() {
             cfg.server.connection_password = self.connection_password.clone();

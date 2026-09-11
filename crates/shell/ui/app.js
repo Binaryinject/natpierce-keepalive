@@ -114,6 +114,17 @@ function renderConfigCheck(check) {
       li.textContent = p;
       list.appendChild(li);
     });
+
+    // 指引按模式区分：页面访问密码只用于**开启本机服务端**，
+    // 客户端模式完全不需要它。写死成一句话会误导用户去填。
+    const isClient =
+      document.querySelector('input[name="mode"]:checked')?.value === 'client';
+    const hint = $('config-hint');
+    if (hint) {
+      hint.textContent = isClient
+        ? '客户端模式所需：① 选择 natpierce.exe；② 指定目标识别码（可在上方「在线主机」列表点选）。改完点底部「保存配置」。'
+        : '服务端模式所需：① 选择 natpierce.exe；② 填写页面访问密码（组网模式下必填）。改完点底部「保存配置」。';
+    }
   }
 }
 
@@ -267,8 +278,10 @@ function renderStatus(st) {
       id.textContent = h.id;
       id.title = '点击填入「目标识别码」';
       id.onclick = () => {
-        $('f-target-id').value = h.id;
-        $('f-target-name').value = h.name || '';
+        // id 必须与 FIELDS 推导出的 DOM id 一致（targetHostId → f-target-host-id），
+        // 否则点选能填进框里、保存却读不到，识别码永远不会被写进配置
+        $('f-target-host-id').value = h.id;
+        $('f-target-host-name').value = h.name || '';
         showMsg(`已选择目标：${h.name}`, false);
       };
       li.append(name, id);
@@ -397,7 +410,7 @@ $('btn-browse-exe').onclick = async () => {
     const stem = stemOf(picked);
     if (stem) $('f-process-name').value = stem;
     const dir = dirOf(picked);
-    if (dir && !$('f-workdir').value.trim()) $('f-workdir').value = dir;
+    if (dir && !$('f-working-dir').value.trim()) $('f-working-dir').value = dir;
 
     // 顺带提示文件名是否像皎月连
     if (!/natpierce/i.test(stem)) {
@@ -415,7 +428,7 @@ $('btn-browse-dir').onclick = async () => {
   try {
     const picked = await pickPath({ directory: true });
     if (!picked) return;
-    $('f-workdir').value = picked;
+    $('f-working-dir').value = picked;
     showMsg('已选择工作目录，记得点「保存配置」', false);
   } catch (e) {
     showMsg(errText(e), true);
@@ -491,7 +504,10 @@ async function loadLogs(force) {
 $('btn-log-refresh')?.addEventListener('click', () => loadLogs(true));
 
 document.querySelectorAll('input[name="mode"]').forEach((r) => {
-  r.onchange = updateModeVisibility;
+  r.onchange = () => {
+    updateModeVisibility();
+    refreshConfigCheck();   // 换模式后必填项不同，校验结果也要跟着变
+  };
 });
 
 // 注：托盘菜单已精简为「打开设置…/退出」，不再发 refresh 事件。

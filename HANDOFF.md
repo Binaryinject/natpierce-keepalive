@@ -119,7 +119,13 @@ c517359  chore(release): v0.1.1                                      ← 已推�
 | 11 | **开服务端报 "DPAPI 数据无效"，但自动登录正常** | `start_server` 走 `resolve()` → `load_dpapi()`，**把整个 JSON vault 当成一个密文去解**；而同文件的 `auto_login` 走 `load_key()` 是对的 —— 同文件两条路径不一致 | 新增 `resolve_key(value, path, key)` 明确用途键，两个调用点改用它；加回归测试 `resolve_key_uses_vault_not_whole_file` |
 | 12 | 假警报「没有管理员权限，无法启动」 | 非提权时先打 WARN「无法启动」，紧接着 `ShellExecuteW("runas")` 弹 UAC 却启动成功，自相矛盾 | 降为 INFO 并如实说明「将通过 UAC 提权（弹框请选是）」 |
 | 13 | 「打开配置目录 / 打开日志目录」点击无反应 | 按钮只在 HTML 里，`app.js` 从未绑定事件 | 补三个绑定（用可选链） |
-| 14 | 多份 config.json 互相覆盖 | `resolve_config_path` 依次探测 CWD / exe 目录 / APPDATA，从哪启动读哪份 | 只认 `%LOCALAPPDATA%\皎月连保活守护\config.json` |
+| 14 | 多份 config.json 互相覆盖 | `resolve_config_path` 依次探测 CWD / exe 目录 / APPDATA，从哪启动读哪份 | 只认 `%LOCALAPPDATA%\natpierce-keepalive\config.json` |
+| 15 | 「开机自启」勾选后一保存就取消 | 前端只实现了读（`autostart_status`），**从未调用 `autostart_set`**；它是注册表操作、不属于 config.json，`save_config` 也不管。保存后 `loadConfig()` 把复选框重置为 false，而唯一会回填的 `loadMisc()` 没被调用 | 保存时先取值 → 调 `autostart_set` → 再用 `autostart_status` 的真实状态回填 |
+| 16 | 表单填了却保存不上（8 个字段） | `readForm()` 按 `FIELDS`/`BOOLS` + `idOf()` 推导 DOM id（camelCase → `f-kebab-case`），但 8 个输入框的 id 不符合规则，值根本读不到：`f-target-id`/`f-target-name`/`f-auto-start`/`f-close-server`/`f-workdir`/`f-interval`/`f-heartbeat`/`f-restart-after` | HTML id 全部改名为推导值；`apply_to` 对 target 字段加"非空才更新"保护 |
+
+> **改动 `index.html` 里任何 `f-*` id 时，务必核对它能被 `idOf()` 推导出来**：
+> `f-` + camelCase 转 kebab。`idOf('targetHostId')` → `f-target-host-id`。
+> 校验方法见下方「常用命令」。
 
 ---
 
