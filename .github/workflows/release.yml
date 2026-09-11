@@ -58,11 +58,18 @@ jobs:
         shell: pwsh
         run: |
           # 下载官方预编译二进制，比 cargo install 快很多
-          $ver = "v2.1.0"
-          $url = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-$ver/cargo-tauri-x86_64-pc-windows-msvc.zip"
+          # 版本号来自 https://github.com/tauri-apps/tauri/releases
+          # （tag 形如 tauri-cli-v2.11.4，资源名固定）
+          $ver = "tauri-cli-v2.11.4"
+          $url = "https://github.com/tauri-apps/tauri/releases/download/$ver/cargo-tauri-x86_64-pc-windows-msvc.zip"
+          Write-Host "下载: $url"
           Invoke-WebRequest -Uri $url -OutFile tauri-cli.zip -UseBasicParsing
           Expand-Archive tauri-cli.zip -DestinationPath .
-          Get-ChildItem cargo-tauri.exe | Select-Object Name, Length
+          $exe = Get-ChildItem -Recurse -Filter cargo-tauri.exe | Select-Object -First 1
+          if (-not $exe) { throw "解压后未找到 cargo-tauri.exe" }
+          Copy-Item $exe.FullName "$env:GITHUB_WORKSPACE\cargo-tauri.exe" -Force
+          Get-Item "$env:GITHUB_WORKSPACE\cargo-tauri.exe" | Select-Object Name, Length | Format-Table -AutoSize
+          & "$env:GITHUB_WORKSPACE\cargo-tauri.exe" --version
 
       - name: 构建 NSIS 安装包
         shell: pwsh
