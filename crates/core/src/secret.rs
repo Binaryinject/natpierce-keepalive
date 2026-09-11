@@ -248,8 +248,19 @@ pub fn save_key(path: &Path, key: &str, plaintext: &str) -> Result<()> {
 /// 读取某个用途的密码
 pub fn load_key(path: &Path, key: &str) -> Result<String> {
     let vault = load_vault(path);
+    // 密钥不存在时要明确报错，而不是静默返回空串 ——
+    // 否则上层会发出"空密码"的请求，报出与真实原因无关的错误
+    // （例如把"页面密码没保存"表现成 "DPAPI 数据无效"）。
     let Some(b64) = vault.get(key) else {
-        return Ok(String::new());
+        anyhow::bail!(
+            "尚未保存{}，请在界面里填写后点「保存配置」",
+            match key {
+                KEY_PAGE => "页面访问密码",
+                KEY_LOGIN => "登录密码",
+                KEY_CONNECTION => "连接密码",
+                _ => "该密码",
+            }
+        );
     };
     let cipher = base64_decode(b64)?;
     let plain = dpapi_unprotect(&cipher)?;
