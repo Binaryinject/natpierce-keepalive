@@ -116,6 +116,19 @@ pub fn cmd_autostart(on: bool) -> String {
     build(&["autostart", if on { "on" } else { "off" }])
 }
 
+/// 打开 / 关闭「组网模式」
+///
+/// 对应界面上那个「组网模式」开关。官方开服务端是**两步**：
+///   ① 勾选组网  → `VPN<$!$>1`
+///   ② 开服务器  → `startServer<连接密码><最大数><页面密码><局域网IP>`
+///
+/// 只做 ② 而漏掉 ① 时，natpierce 会忽略 startServer 里的页面密码：
+/// 配置里 `VPN` 保持 false、`WebPwd` 保持空，表现为
+/// 「命令发出去了，但服务端就是起不来」。
+pub fn cmd_vpn(on: bool) -> String {
+    build(&["VPN", if on { "1" } else { "0" }])
+}
+
 /// 登录（账号 + 密码）
 ///
 /// 报文：`login<$!$>账号<$!$>密码<$!$>保存密码(0/1)<$!$>自动登录(0/1)`

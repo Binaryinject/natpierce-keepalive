@@ -409,8 +409,17 @@ impl Keepalive {
         )
         .await?;
 
-        // 页面上「组网模式」开启时才会读取页面访问密码；
-        // 关闭组网模式（改用端口映射）时官方传空字符串，这里保持一致。
+        // ① 先打开「组网模式」。
+        // 官方界面是这样两步走的：勾选组网（发 VPN<$!$>1），再开服务器。
+        // 漏掉这一步时 startServer 里的页面密码会被忽略 ——
+        // 皎月连配置里 VPN 仍是 false、WebPwd 仍是空，服务端起不来。
+        if cfg.server.vpn_mode {
+            client.send(&protocol::cmd_vpn(true)).await?;
+            // 留一点时间让它把配置落盘
+            let _ = client.drain(Duration::from_millis(600)).await;
+        }
+
+        // ② 再开服务器。组网模式下带页面密码；端口映射模式官方传空串。
         let page_arg: &str = if cfg.server.vpn_mode { &page_pwd } else { "" };
 
         let cmd = protocol::cmd_start_server(
@@ -423,17 +432,35 @@ impl Keepalive {
 
         let deadline = Instant::now() + Duration::from_secs(cfg.server.start_timeout_sec);
         let mut ok = false;
+        // 记下 natpierce 的回应：失败时打出来，否则只有一个"未成功"没法查
+        let mut replies: Vec<String> = Vec::new();
         while Instant::now() < deadline && !ok {
             match client.next_message(Duration::from_millis(1500)).await {
                 Some(m) => {
                     if m.is_server_running() == Some(true) {
                         ok = true;
+                    } else if replies.len() < 6 {
+                        replies.push(format!("{m:?}"));
                     }
                 }
                 None => continue,
             }
         }
+        // 服务端起来之后，natpierce 一定已就绪 —— 这时再顺手开启它自身的
+        // 「自动开启」，它重开后就能自行恢复服务端。
+        // 放在守护进程启动瞬间发太早：那会儿它可能还没登录，命令会被丢掉
+        // （表现为皎月连配置里 Auto_start 一直是 0）。
+        if ok && cfg.server.auto_start_server {
+            if client.send(&protocol::cmd_autostart(true)).await.is_ok() {
+                info!("已为皎月连启用「自动开启」（它重开后能自行恢复服务端）");
+            }
+        }
+
         client.close().await;
+
+        if !ok && !replies.is_empty() {
+            warn!("开启服务端未成功，natpierce 回应: {}", replies.join(" | "));
+        }
         Ok(ok)
     }
 
