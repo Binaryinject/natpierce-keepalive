@@ -494,11 +494,8 @@ document.querySelectorAll('input[name="mode"]').forEach((r) => {
   r.onchange = updateModeVisibility;
 });
 
-// 托盘菜单的「立即刷新」
-listenEvent('refresh', () => {
-  loadStatus();
-  loadLogs(true);
-});
+// 注：托盘菜单已精简为「打开设置…/退出」，不再发 refresh 事件。
+// 状态本来就由后端每 3 秒主动推送，无需手动刷新入口。
 
 // 后端主动推送的状态（取代轮询，操作完成即刷新）
 listenEvent('status-changed', (ev) => {

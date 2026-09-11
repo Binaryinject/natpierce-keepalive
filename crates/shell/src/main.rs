@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
@@ -862,18 +862,14 @@ fn autostart_keepalive_if_ready(app: &AppHandle) {
 
 /// 构建系统托盘
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    // 托盘只保留两个必要入口：显示窗口 / 退出。
+    // 设置类操作（开机自启、刷新等）一律走界面 ——
+    // 托盘的 CheckMenuItem 不会自动跟随界面变化，两套 UI 必然不同步。
     let show = MenuItem::with_id(app, "show", "打开设置…", true, None::<&str>)?;
-    let autostart_item =
-        CheckMenuItem::with_id(app, "autostart", "开机自启", true, autostart::is_enabled(), None::<&str>)?;
-    let refresh = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
+    let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[&show, &sep1, &autostart_item, &sep2, &refresh, &quit],
-    )?;
+    let menu = Menu::with_items(app, &[&show, &sep, &quit])?;
 
     let _tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().cloned().unwrap())
@@ -887,28 +883,30 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = w.set_focus();
                 }
             }
-            "autostart" => {
-                let cfg = config::resolve_config_path();
-                let _ = autostart::toggle(Some(&cfg));
-            }
-            "refresh" => {
-                let _ = app.emit("refresh", ());
-            }
             "quit" => shutdown_all(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
+            // 单击 / 双击左键都打开设置窗口。
+            // 双击时系统会先发两次 Click 再发 DoubleClick，重复 show 无害。
+            let show_window = || {
                 let app = tray.app_handle();
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }
+            };
+            match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => show_window(),
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => show_window(),
+                _ => {}
             }
         })
         .build(app)?;
