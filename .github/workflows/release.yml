@@ -8,21 +8,19 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号（如 v0.1.0），留空则用 Cargo.toml 里的版本"
-        required: false
-        default: ""
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   # ------------------------------------------------------------
-  # 构建 Windows 安装包
+  # 构建 Windows 产物
   # ------------------------------------------------------------
   build-windows:
-    name: 构建 Windows 安装包
+    name: 构建 Windows 产物
     runs-on: windows-latest
 
     steps:
@@ -43,35 +41,48 @@ jobs:
       - name: 运行单元测试
         run: cargo test --release -p natpierce-core
 
-      - name: 整理产物
+      - name: 整理便携版
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target\release\natpierce-gui.exe        dist\
-          Copy-Item target\release\natpierce-keepalived.exe dist\
-          Copy-Item config.example.json                     dist\
-          Copy-Item README.md                               dist\
-          # 便携版压缩包（两个 exe + 配置模板，解压即用）
-          Compress-Archive -Path dist\* `
-            -DestinationPath "natpierce-keepalive-portable.zip" -Force
-          Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item target\release\natpierce-gui.exe         portable\
+          Copy-Item target\release\natpierce-keepalived.exe  portable\
+          Copy-Item config.example.json                      portable\
+          Copy-Item README.md                                portable\
+          Compress-Archive -Path portable\* `
+            -DestinationPath natpierce-keepalive-portable.zip -Force
+          Get-ChildItem portable | Select-Object Name, Length | Format-Table -AutoSize
+          Write-Host "便携版: $((Get-Item natpierce-keepalive-portable.zip).Length) bytes"
 
       - name: 安装 Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+        shell: pwsh
+        run: |
+          # 下载官方预编译二进制，比 cargo install 快很多
+          $ver = "v2.1.0"
+          $url = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-$ver/cargo-tauri-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile tauri-cli.zip -UseBasicParsing
+          Expand-Archive tauri-cli.zip -DestinationPath .
+          Get-ChildItem cargo-tauri.exe | Select-Object Name, Length
 
       - name: 构建 NSIS 安装包
         shell: pwsh
         working-directory: crates/shell
         run: |
-          # 把两个 exe 放进 bundle 目录一并打包
-          cargo tauri build --no-bundle
-          # 生成安装包
-          cargo tauri bundle --bundles nsis
-          # 收集产物
-          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe -ErrorAction SilentlyContinue |
-            Copy-Item -Destination ..\..\ -Force
+          $tauri = "$env:GITHUB_WORKSPACE\cargo-tauri.exe"
+          & $tauri bundle --bundles nsis
+          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe |
+            Select-Object Name, Length | Format-Table -AutoSize
 
-      - name: 上传构建产物（artifact）
+      - name: 把守护进程并入安装包目录
+        shell: pwsh
+        run: |
+          # 安装包安装后需要两个 exe 同目录，这里把 keepalived 一并放进
+          # 便携版压缩包已经包含它；NSIS 安装包由下面的 artifact 一起提供
+          $nsis = Get-ChildItem target\release\bundle\nsis\*.exe -EA SilentlyContinue
+          if (-not $nsis) { throw "未生成 NSIS 安装包" }
+          Write-Host "安装包: $($nsis.Name)"
+
+      - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
@@ -80,10 +91,10 @@ jobs:
             target/release/natpierce-keepalived.exe
             target/release/bundle/nsis/*.exe
             natpierce-keepalive-portable.zip
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # ------------------------------------------------------------
-  # 创建 Release 并上传安装包
+  # 创建 Release
   # ------------------------------------------------------------
   release:
     name: 发布 Release
@@ -91,46 +102,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
       - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           name: windows-build
           path: artifacts
 
-      - name: 列出下载到的文件
+      - name: 列出文件
         run: find artifacts -type f | sort
 
-      - name: 生成 Release 说明
-        id: notes
-        shell: bash
+      - name: 说明文件
         run: |
           cat > RELEASE_NOTES.md <<'EOF'
           ## 皎月连保活守护
 
-          ### 下载
-          - **`*-setup.exe`** —— NSIS 安装包，双击安装（推荐）
-          - **`natpierce-keepalive-portable.zip`** —— 便携版，解压即用
+          ### 下载哪个
+          | 文件 | 说明 |
+          |---|---|
+          | `*-setup.exe` | 安装包，双击安装（推荐） |
+          | `natpierce-keepalive-portable.zip` | 便携版，解压即用 |
 
           ### 首次使用
           1. 启动 `natpierce-gui.exe`
-          2. 界面顶部会提示缺什么，点「浏览…」选择你的 `natpierce.exe`
+          2. 界面顶部会提示缺什么 → 点「浏览…」选择你的 `natpierce.exe`
           3. 填写「页面访问密码」（皎月连界面里的 6-20 位密码）
-          4. 点「保存配置」—— 保活会自动开启
+          4. 点「保存配置」→ **保活自动开启**，无需其他操作
 
-          ### 说明
-          - 支持服务端 / 客户端双模式（互斥）
-          - 密码使用 Windows DPAPI 加密，不会明文落盘
+          ### 特性
+          - 服务端 / 客户端双模式（互斥）
+          - 三层判据保活：进程层 / 服务层 / 心跳层
+          - 配置热重载、优雅停止
+          - 密码用 Windows DPAPI 加密，不明文落盘
           - 只与本机 `127.0.0.1:33272` 通信，不向外发送数据
-          - 需要 Windows 10/11 与 WebView2（系统通常自带）
+
+          ### 环境要求
+          Windows 10/11 + WebView2（系统通常自带）
 
           详见 [README](https://github.com/${{ github.repository }}#readme)。
           EOF
-          echo "ok" >> "$GITHUB_OUTPUT"
 
-      - name: 创建 / 更新 Release
+      - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
