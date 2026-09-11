@@ -107,6 +107,30 @@ pub fn cmd_stop_connect() -> String {
     build(&["stopcon", ""])
 }
 
+/// 登录（账号 + 密码）
+///
+/// 报文：`login<$!$>账号<$!$>密码<$!$>保存密码(0/1)<$!$>自动登录(0/1)`
+pub fn cmd_login(user: &str, pwd: &str, save_pwd: bool, auto_login: bool) -> String {
+    build(&[
+        "login",
+        user,
+        pwd,
+        if save_pwd { "1" } else { "0" },
+        if auto_login { "1" } else { "0" },
+    ])
+}
+
+/// 强制登录（当他处已登录同一账号时，服务端会回 `y?`，用此命令确认顶掉）
+pub fn cmd_force_login(user: &str, pwd: &str, save_pwd: bool, auto_login: bool) -> String {
+    build(&[
+        "y",
+        user,
+        pwd,
+        if save_pwd { "1" } else { "0" },
+        if auto_login { "1" } else { "0" },
+    ])
+}
+
 /// 断开某个客户端
 pub fn cmd_disconnect(id: &str) -> String {
     build(&["dis", id])
@@ -145,6 +169,8 @@ impl RawMessage {
 /// 解析后的推送消息
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
+    /// 处于登录界面（未登录 / 已登出）
+    NeedLogin,
     /// 软件已启动
     Started { version: String, platform: String },
     /// 服务端未启动
@@ -205,6 +231,9 @@ impl Message {
                 version: m.field(0).to_string(),
                 platform: m.field(1).to_string(),
             },
+
+            // 登录界面（未登录）
+            "0" => Message::NeedLogin,
 
             // 服务端未启动
             "1" => Message::ServerStopped {

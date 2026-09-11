@@ -194,6 +194,144 @@ pub fn save_dpapi(_path: &Path, _plaintext: &str) -> Result<()> {
 pub fn load_dpapi(_path: &Path) -> Result<String> {
     anyhow::bail!("DPAPI 仅支持 Windows 平台")
 }
+// ============================================================
+// 多密钥存储（登录密码 / 页面密码分开保存）
+// ============================================================
+
+/// 密钥用途：
+/// - `page`      页面访问密码（开启服务端用）
+/// - `login`     皎月连登录密码（自动登录用）
+/// - `connection` 连接密码
+pub const KEY_PAGE: &str = "page";
+pub const KEY_LOGIN: &str = "login";
+pub const KEY_CONNECTION: &str = "connection";
+
+/// 读取多密钥文件（JSON: {"page":"密文base64","login":"..."}）
+fn load_vault(path: &Path) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return map;
+    };
+    if let Ok(v) = serde_json::from_str::<std::collections::HashMap<String, String>>(&text) {
+        return v;
+    }
+    // 兼容旧的单密码格式（整个文件是 base64 密文）
+    if let Ok(plain) = load_dpapi_legacy(path) {
+        map.insert(KEY_PAGE.to_string(), plain);
+    }
+    map
+}
+
+/// 旧格式读取（文件内容直接是 DPAPI 密文的 base64）
+fn load_dpapi_legacy(path: &Path) -> Result<String> {
+    let b64 = std::fs::read_to_string(path)?;
+    let cipher = base64_decode(b64.trim())?;
+    let plain = dpapi_unprotect(&cipher)?;
+    String::from_utf8(plain).context("解密结果不是合法 UTF-8")
+}
+
+/// 保存某个用途的密码
+pub fn save_key(path: &Path, key: &str, plaintext: &str) -> Result<()> {
+    let mut vault = load_vault(path);
+    let cipher = dpapi_protect(plaintext.as_bytes())?;
+    vault.insert(key.to_string(), base64_encode(&cipher));
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let text = serde_json::to_string_pretty(&vault)?;
+    std::fs::write(path, text)?;
+    Ok(())
+}
+
+/// 读取某个用途的密码
+pub fn load_key(path: &Path, key: &str) -> Result<String> {
+    let vault = load_vault(path);
+    let Some(b64) = vault.get(key) else {
+        return Ok(String::new());
+    };
+    let cipher = base64_decode(b64)?;
+    let plain = dpapi_unprotect(&cipher)?;
+    String::from_utf8(plain).context("解密结果不是合法 UTF-8")
+}
+
+// ---- DPAPI 与 base64 的平台无关包装 ----
+
+#[cfg(windows)]
+fn dpapi_protect(data: &[u8]) -> Result<Vec<u8>> {
+    dpapi::protect(data)
+}
+#[cfg(windows)]
+fn dpapi_unprotect(data: &[u8]) -> Result<Vec<u8>> {
+    dpapi::unprotect(data)
+}
+#[cfg(not(windows))]
+fn dpapi_protect(_d: &[u8]) -> Result<Vec<u8>> {
+    anyhow::bail!("DPAPI 仅支持 Windows")
+}
+#[cfg(not(windows))]
+fn dpapi_unprotect(_d: &[u8]) -> Result<Vec<u8>> {
+    anyhow::bail!("DPAPI 仅支持 Windows")
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+fn base64_decode(s: &str) -> Result<Vec<u8>> {
+    fn val(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let bytes: Vec<u8> = s.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    for chunk in bytes.chunks(4) {
+        if chunk.len() < 4 {
+            break;
+        }
+        let mut n = 0u32;
+        let mut pad = 0;
+        for (i, &c) in chunk.iter().enumerate() {
+            if c == b'=' {
+                pad += 1;
+                n <<= 6;
+            } else {
+                n = (n << 6) | val(c).ok_or_else(|| anyhow::anyhow!("非法 base64 字符: {}", c as char))?;
+            }
+            let _ = i;
+        }
+        out.push((n >> 16) as u8);
+        if pad < 2 {
+            out.push((n >> 8) as u8);
+        }
+        if pad < 1 {
+            out.push(n as u8);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

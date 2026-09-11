@@ -105,6 +105,15 @@ struct ConfigView {
     /// 是否已经保存过页面密码（DPAPI 密文存在）
     #[serde(default)]
     has_page_password: bool,
+    /// 皎月连登录账号（邮箱）
+    #[serde(default)]
+    account: String,
+    /// 界面新输入的登录密码（留空表示不修改）
+    #[serde(default)]
+    login_password: String,
+    /// 是否已保存登录密码
+    #[serde(default)]
+    has_login_password: bool,
     /// 界面新输入的页面密码（留空表示不修改）
     #[serde(default)]
     page_password: String,
@@ -134,6 +143,14 @@ impl ConfigView {
             close_server_first: cfg.client.close_server_first,
             keepalive_enabled: cfg.keepalive.enabled,
             has_page_password: secret::default_secrets_path(config_path).exists(),
+            account: cfg.account.clone(),
+            login_password: String::new(),
+            has_login_password: secret::load_key(
+                &secret::default_secrets_path(config_path),
+                secret::KEY_LOGIN,
+            )
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
             page_password: String::new(),
             connection_password: String::new(),
         }
@@ -161,6 +178,9 @@ impl ConfigView {
         cfg.keepalive.restart_after_failures =
             self.restart_after_failures.trim().parse().unwrap_or(5);
         cfg.keepalive.enabled = self.keepalive_enabled;
+        if !self.account.trim().is_empty() {
+            cfg.account = self.account.trim().to_string();
+        }
         cfg.client.target_host_id = self.target_host_id.trim().to_string();
         cfg.client.target_host_name = self.target_host_name.trim().to_string();
         cfg.client.close_server_first = self.close_server_first;
@@ -191,21 +211,67 @@ fn get_config(state: tauri::State<'_, Mutex<AppState>>) -> Result<ConfigView, St
 fn save_config(
     view: ConfigView,
     state: tauri::State<'_, Mutex<AppState>>,
+    app: AppHandle,
 ) -> Result<String, String> {
-    let st = state.lock().map_err(|e| e.to_string())?;
-    let mut loaded = config::load_config_from(&st.config_path).map_err(|e| format!("{e:#}"))?;
+    // 在独立作用域内完成写入，尽早释放 state 借用
+    let (path, was_running) = {
+        let st = state.lock().map_err(|e| e.to_string())?;
+        let mut loaded =
+            config::load_config_from(&st.config_path).map_err(|e| format!("{e:#}"))?;
 
-    // 新输入的页面密码 → DPAPI 加密落盘
-    if !view.page_password.trim().is_empty() {
-        let secrets = secret::default_secrets_path(&st.config_path);
-        secret::save_dpapi(&secrets, view.page_password.trim())
-            .map_err(|e| format!("保存密码失败: {e:#}"))?;
-        loaded.config.server.page_password = "dpapi".into();
+        // 新输入的页面密码 → DPAPI 加密落盘
+        if !view.page_password.trim().is_empty() {
+            let secrets = secret::default_secrets_path(&st.config_path);
+            secret::save_key(&secrets, secret::KEY_PAGE, view.page_password.trim())
+                .map_err(|e| format!("保存密码失败: {e:#}"))?;
+            loaded.config.server.page_password = "dpapi".into();
+        }
+
+        // 登录密码 → DPAPI（与页面密码分开存）
+        if !view.login_password.trim().is_empty() {
+            let secrets = secret::default_secrets_path(&st.config_path);
+            secret::save_key(&secrets, secret::KEY_LOGIN, view.login_password.trim())
+                .map_err(|e| format!("保存登录密码失败: {e:#}"))?;
+        }
+
+        view.apply_to(&mut loaded.config);
+        loaded.save().map_err(|e| format!("保存失败: {e:#}"))?;
+
+        (
+            st.config_path.clone(),
+            process::is_running("natpierce-keepalived"),
+        )
+    };
+
+    if !was_running {
+        return Ok("已保存".into());
     }
 
-    view.apply_to(&mut loaded.config);
-    loaded.save().map_err(|e| format!("保存失败: {e:#}"))?;
-    Ok("已保存".into())
+    // 异步重启，避免阻塞界面（停止要等守护进程退出，最长数秒）
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        // ① 优雅停止
+        let _ = natpierce_core::stop_flag::request(&path);
+        for _ in 0..25 {
+            std::thread::sleep(Duration::from_millis(200));
+            if !process::is_running("natpierce-keepalived") {
+                break;
+            }
+        }
+        if process::is_running("natpierce-keepalived") {
+            tracing::warn!("保存配置：守护进程未响应停止请求，尝试强制结束");
+            let _ = process::kill_all("natpierce-keepalived");
+            std::thread::sleep(Duration::from_millis(500));
+        }
+
+        // ② 用新配置重新启动
+        match spawn_daemon(&handle) {
+            Ok(_) => tracing::info!("保存配置：已用新配置重启保活"),
+            Err(e) => tracing::warn!("保存配置：重启保活失败（{e}）"),
+        }
+    });
+
+    Ok("已保存，正在用新配置重启保活…".into())
 }
 
 /// 查询运行时状态

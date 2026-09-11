@@ -81,6 +81,27 @@
       <div class="alert error" id="status-error" hidden></div>
     </section>
 
+    <!-- 皎月连账号（自动登录用，两种模式都需要） -->
+    <section class="card">
+      <h2>皎月连账号</h2>
+      <p class="hint">
+        用于自动登录。若皎月连的登录存档被清除（或首次使用），
+        它会停在登录界面 —— 此时必须登录才能开启服务端或连接远端主机。
+      </p>
+      <div class="form-grid">
+        <label>
+          <span>登录账号 <b class="req">必填</b></span>
+          <input type="text" id="f-account" placeholder="皎月连登录邮箱" autocomplete="username">
+          <small>例如 274089056@qq.com</small>
+        </label>
+        <label>
+          <span>登录密码 <b class="req">必填</b></span>
+          <input type="password" id="f-login-pwd" placeholder="皎月连登录密码" autocomplete="current-password">
+          <small id="login-pwd-hint">已加密保存；留空表示不修改</small>
+        </label>
+      </div>
+    </section>
+
     <!-- 工作模式 -->
     <section class="card">
       <h2>工作模式</h2>

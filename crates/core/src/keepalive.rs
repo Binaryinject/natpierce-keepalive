@@ -30,6 +30,8 @@ use crate::secret;
 /// 一次巡检得到的健康状态
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Health {
+    /// 皎月连处于登录界面（未登录）
+    NeedLogin,
     /// 一切正常
     Healthy,
     /// 进程不在
@@ -45,6 +47,10 @@ pub enum Health {
 }
 
 impl Health {
+    pub fn needs_login(&self) -> bool {
+        matches!(self, Health::NeedLogin)
+    }
+
     pub fn is_healthy(&self) -> bool {
         matches!(self, Health::Healthy)
     }
@@ -66,6 +72,7 @@ impl Health {
             Health::ApiUnreachable => "本地接口连不上".into(),
             Health::ServerStopped => "服务端未启动".into(),
             Health::ClientDisconnected => "未连接到目标主机".into(),
+            Health::NeedLogin => "未登录皎月连".into(),
             Health::Error(e) => format!("错误: {e}"),
         }
     }
@@ -159,6 +166,24 @@ impl Keepalive {
                 self.maybe_heartbeat().await;
             }
 
+            Health::NeedLogin => {
+                info!("检测到皎月连未登录，尝试自动登录");
+                match self.auto_login().await {
+                    Ok(true) => {
+                        info!("自动登录成功");
+                        self.failures = 0;
+                    }
+                    Ok(false) => {
+                        self.failures += 1;
+                        warn!("自动登录未成功（请检查界面里的账号与密码）");
+                    }
+                    Err(e) => {
+                        self.failures += 1;
+                        warn!("自动登录出错: {e:#}");
+                    }
+                }
+            }
+
             Health::ProcessMissing => {
                 warn!("检测到 {} 未运行，尝试启动", self.cfg().natpierce.process_name);
                 self.failures = 0;
@@ -241,20 +266,26 @@ impl Keepalive {
         )
         .await
         {
-            Ok(r) => match cfg.mode {
-                Mode::Server => match r.server_running {
-                    Some(true) => Health::Healthy,
-                    Some(false) => Health::ServerStopped,
-                    None => Health::Error("无法判定服务端状态".into()),
-                },
-                Mode::Client => {
-                    if self.client_connected(&r) {
-                        Health::Healthy
-                    } else {
-                        Health::ClientDisconnected
+            Ok(r) => {
+                // 未登录优先处理：此时既没有服务端也没有客户端连接
+                if r.need_login {
+                    return Health::NeedLogin;
+                }
+                match cfg.mode {
+                    Mode::Server => match r.server_running {
+                        Some(true) => Health::Healthy,
+                        Some(false) => Health::ServerStopped,
+                        None => Health::Error("无法判定服务端状态".into()),
+                    },
+                    Mode::Client => {
+                        if self.client_connected(&r) {
+                            Health::Healthy
+                        } else {
+                            Health::ClientDisconnected
+                        }
                     }
                 }
-            },
+            }
             Err(e) => {
                 debug!("API 探测失败: {e:#}");
                 Health::ApiUnreachable
@@ -348,6 +379,72 @@ impl Keepalive {
                 Some(m) => {
                     if m.is_server_running() == Some(true) {
                         ok = true;
+                    }
+                }
+                None => continue,
+            }
+        }
+        client.close().await;
+        Ok(ok)
+    }
+
+    /// 登录层：自动登录皎月连
+    ///
+    /// 场景：皎月连的登录存档被清除（或首次使用）时，进程虽在运行，
+    /// 但停在登录界面 —— 此时既没有服务端也没有客户端连接，
+    /// 必须先用账号密码登录，后续的 startServer / conpc 才有意义。
+    ///
+    /// 账号与密码都来自配置（密码存在 DPAPI 密文里）。
+    async fn auto_login(&self) -> Result<bool> {
+        let cfg = self.cfg();
+
+        let account = cfg.account.trim();
+        if account.is_empty() {
+            anyhow::bail!("未配置登录账号，请在界面「账号与密码」里填写");
+        }
+
+        let login_pwd = crate::secret::load_key(
+            &crate::secret::default_secrets_path(&self.loaded.path),
+            crate::secret::KEY_LOGIN,
+        )
+        .unwrap_or_default();
+
+        if login_pwd.is_empty() {
+            anyhow::bail!("未配置登录密码，请在界面「账号与密码」里填写并保存");
+        }
+
+        let mut client = api::ApiClient::connect(
+            &cfg.api.url,
+            &cfg.api.fallback_url,
+            Duration::from_millis(cfg.api.connect_timeout_ms),
+            Duration::from_millis(cfg.api.command_timeout_ms),
+        )
+        .await?;
+
+        // 先丢弃握手推送，避免干扰后续判定
+        let _ = client.drain(Duration::from_millis(800)).await;
+
+        let cmd = protocol::cmd_login(account, &login_pwd, true, true);
+        client.send(&cmd).await?;
+
+        // 等 2 或 y? （y? 表示该账号已在别处登录，需要确认顶掉）
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut ok = false;
+        while Instant::now() < deadline && !ok {
+            match client.next_message(Duration::from_millis(1500)).await {
+                Some(protocol::Message::ServerRunning { .. }) => {
+                    ok = true;
+                }
+                Some(protocol::Message::Info(text)) => {
+                    // 服务端把登录失败原因放在 info 里
+                    warn!("登录返回提示: {text}");
+                }
+                Some(m) => {
+                    // 收到 "y?" 之类的确认请求：配置里账号密码可信，直接确认顶掉旧会话
+                    let raw = format!("{m:?}");
+                    if raw.contains("y?") {
+                        let force = protocol::cmd_force_login(account, &login_pwd, true, true);
+                        client.send(&force).await?;
                     }
                 }
                 None => continue,

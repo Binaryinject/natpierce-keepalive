@@ -53,6 +53,8 @@ impl LogLevel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// 皎月连登录账号（邮箱），仅用于展示与同步，不参与保活判定
+    pub account: String,
     /// 运行模式
     pub mode: Mode,
     pub natpierce: NatpierceConfig,
@@ -66,6 +68,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            account: String::new(),
             mode: Mode::Server,
             natpierce: NatpierceConfig::default(),
             api: ApiConfig::default(),

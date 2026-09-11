@@ -83,6 +83,7 @@ function errText(e) {
 // ⚠️ 字段名必须与 Rust 端 ConfigView 的 serde 输出一致（camelCase），
 //    否则 save_config 会报 "missing field"。
 const FIELDS = [
+  'account',
   'exePath', 'workingDir', 'processName', 'startArgs', 'apiUrl',
   'maxClients', 'intervalSec', 'heartbeatSec', 'failThreshold',
   'restartAfterFailures', 'targetHostId', 'targetHostName',
@@ -173,9 +174,11 @@ function readForm() {
     const el = $(idOf(k));
     if (el) view[k] = el.checked;
   });
+  view.loginPassword = $('f-login-pwd')?.value || '';
   view.pagePassword = $('f-page-pwd').value;
   view.connectionPassword = $('f-conn-pwd').value;
   view.hasPagePassword = currentConfig?.hasPagePassword ?? false;
+  view.hasLoginPassword = currentConfig?.hasLoginPassword ?? false;
 
   // 直接发 camelCase：Rust 端 ConfigView 标注了 `rename_all = "camelCase"`，
   // Tauri 命令参数即按该规则反序列化。（曾经错误地转成 snake_case，

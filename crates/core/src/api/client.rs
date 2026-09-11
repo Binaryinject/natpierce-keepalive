@@ -141,6 +141,8 @@ impl ApiClient {
 /// 一次性的状态查询结果
 #[derive(Debug, Clone, Default)]
 pub struct ProbeResult {
+    /// 是否处于登录界面（未登录）
+    pub need_login: bool,
     /// 服务端是否在运行；None 表示无法判定
     pub server_running: Option<bool>,
     /// 服务端概况
@@ -185,6 +187,10 @@ pub async fn probe(
 }
 
 fn absorb(r: &mut ProbeResult, m: &Message) {
+    if matches!(m, Message::NeedLogin) {
+        r.need_login = true;
+        return;
+    }
     if let Some(running) = m.is_server_running() {
         r.server_running = Some(running);
     }
