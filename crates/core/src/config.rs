@@ -326,6 +326,14 @@ impl Fingerprint {
         })
     }
 }
+/// 运行时状态文件路径（守护进程写、界面读），与配置文件同目录
+pub fn status_file_path(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .map(|d| d.join(".status"))
+        .unwrap_or_else(|| PathBuf::from(".status"))
+}
+
 /// `%APPDATA%\natpierce-keepalive\config.json`，用于 exe 目录不可写时的回退
 pub fn fallback_config_path() -> Option<PathBuf> {
     dirs_appdata().map(|d| d.join("natpierce-keepalive").join("config.json"))

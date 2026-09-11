@@ -91,6 +91,8 @@ pub struct Keepalive {
     pub repairs: u32,
     /// 上次心跳时间
     last_heartbeat: Option<Instant>,
+    /// 最近一次失败的描述（供界面展示，如"账号或密码错误"）
+    last_error: Option<String>,
     /// 上次看到的配置文件指纹（用于热重载）
     config_fp: Option<crate::config::Fingerprint>,
 }
@@ -105,6 +107,7 @@ impl Keepalive {
             restarts: 0,
             repairs: 0,
             last_heartbeat: None,
+            last_error: None,
             config_fp: fp,
         }
     }
@@ -114,6 +117,28 @@ impl Keepalive {
     /// 这是必需的：守护进程常驻运行，用户在界面里改完配置点保存时守护进程
     /// 并不会重启。没有热重载的话它会一直用启动时读到的旧配置
     /// —— 典型症状就是日志里反复出现旧的 exe 路径。
+    /// 最近一次失败原因，成功后清空
+    pub fn last_error(&self) -> Option<&str> {
+        self.last_error.as_deref()
+    }
+
+    /// 把最近状态写到配置文件同目录的 .status（供界面展示）
+    ///
+    /// 守护进程与界面是两个进程，无法直接共享内存，用状态文件做最轻量的通道。
+    fn write_status_file(&self) {
+        let path = crate::config::status_file_path(&self.loaded.path);
+        let body = serde_json::json!({
+            "lastError": self.last_error,
+            "failures": self.failures,
+            "restarts": self.restarts,
+            "repairs": self.repairs,
+            "mode": format!("{}", self.cfg().mode),
+            "account": self.cfg().account,
+            "updatedAt": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        });
+        let _ = std::fs::write(path, body.to_string());
+    }
+
     fn reload_if_changed(&mut self) {
         let path = self.loaded.path.clone();
         let now = match crate::config::Fingerprint::of(&path) {
@@ -163,6 +188,7 @@ impl Keepalive {
                     info!("已恢复正常（此前连续失败 {} 次）", self.failures);
                 }
                 self.failures = 0;
+                self.last_error = None;
                 self.maybe_heartbeat().await;
             }
 
@@ -170,16 +196,22 @@ impl Keepalive {
                 info!("检测到皎月连未登录，尝试自动登录");
                 match self.auto_login().await {
                     Ok(true) => {
-                        info!("自动登录成功");
+                        info!("自动登录成功，稍后会自动开启服务端");
                         self.failures = 0;
+                        self.last_error = None;
                     }
                     Ok(false) => {
                         self.failures += 1;
-                        warn!("自动登录未成功（请检查界面里的账号与密码）");
+                        let msg = "自动登录未成功，请检查界面「皎月连账号」里的账号与密码".to_string();
+                        warn!("{msg}");
+                        self.last_error = Some(msg);
                     }
                     Err(e) => {
                         self.failures += 1;
-                        warn!("自动登录出错: {e:#}");
+                        // bail! 里带的是服务端返回的具体原因（如"账号或密码错误"）
+                        let msg = format!("{e}");
+                        warn!("自动登录失败: {msg}");
+                        self.last_error = Some(msg);
                     }
                 }
             }
@@ -245,6 +277,7 @@ impl Keepalive {
             }
         }
 
+        self.write_status_file();
         Ok(health)
     }
 
@@ -427,20 +460,32 @@ impl Keepalive {
         let cmd = protocol::cmd_login(account, &login_pwd, true, true);
         client.send(&cmd).await?;
 
-        // 等 2 或 y? （y? 表示该账号已在别处登录，需要确认顶掉）
+        // 等待登录结果。
+        // 注意：登录成功 ≠ 收到 ServerRunning —— 登录后服务端通常仍是"未启动"，
+        // 服务端会推 1（已登录未启动）或 2（已登录且已启动）。
+        // 收到 0 才是"仍未登录"，收到 Info 则是失败原因（如账号或密码错误）。
         let deadline = Instant::now() + Duration::from_secs(20);
-        let mut ok = false;
-        while Instant::now() < deadline && !ok {
+        let mut logged_in = false;
+        let mut fail_reason: Option<String> = None;
+
+        while Instant::now() < deadline && !logged_in && fail_reason.is_none() {
             match client.next_message(Duration::from_millis(1500)).await {
-                Some(protocol::Message::ServerRunning { .. }) => {
-                    ok = true;
+                // 已登录：服务端已启动
+                Some(protocol::Message::ServerRunning { .. }) => logged_in = true,
+                // 已登录：服务端未启动（这才是常见情况，后续 tick 会去 startServer）
+                Some(protocol::Message::ServerStopped { .. }) => logged_in = true,
+                // 仍未登录：说明这次尝试没成功
+                Some(protocol::Message::NeedLogin) => {
+                    fail_reason = Some("登录未生效（账号或密码可能不正确）".into());
                 }
+                // 服务端把失败原因放在 info 里
                 Some(protocol::Message::Info(text)) => {
-                    // 服务端把登录失败原因放在 info 里
-                    warn!("登录返回提示: {text}");
+                    if !text.trim().is_empty() {
+                        fail_reason = Some(text);
+                    }
                 }
                 Some(m) => {
-                    // 收到 "y?" 之类的确认请求：配置里账号密码可信，直接确认顶掉旧会话
+                    // 该账号已在别处登录时服务端回 y?，确认顶掉旧会话
                     let raw = format!("{m:?}");
                     if raw.contains("y?") {
                         let force = protocol::cmd_force_login(account, &login_pwd, true, true);
@@ -450,8 +495,31 @@ impl Keepalive {
                 None => continue,
             }
         }
+
+        // 双向确认：再用一次探测看 need_login 是否已消除
+        if logged_in {
+            match api::probe(
+                &cfg.api.url,
+                &cfg.api.fallback_url,
+                Duration::from_millis(cfg.api.connect_timeout_ms),
+                Duration::from_millis(cfg.api.command_timeout_ms),
+            )
+            .await
+            {
+                Ok(r) if r.need_login => {
+                    logged_in = false;
+                    fail_reason = Some("登录后仍处于登录界面，请检查账号与密码".into());
+                }
+                _ => {}
+            }
+        }
+
         client.close().await;
-        Ok(ok)
+
+        if let Some(reason) = fail_reason {
+            anyhow::bail!("{reason}");
+        }
+        Ok(logged_in)
     }
 
     /// 客户端层：连目标主机

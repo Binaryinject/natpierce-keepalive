@@ -205,6 +205,10 @@ function updateModeVisibility() {
 
 // ---------- 状态渲染 ----------
 function renderStatus(st) {
+  // 在线主机列表只对客户端模式有意义：服务端模式不选目标主机
+  const isClientMode =
+    document.querySelector(`input[name="mode"]:checked`)?.value === `client`;
+
   // 徽章
   setBadge($('badge-daemon'),
     '保活：' + (st.daemonRunning ? '运行中' : '已停止'),
@@ -227,11 +231,15 @@ function renderStatus(st) {
   setStat($('st-account'), st.account || '—');
   setStat($('st-ident'), st.identification || '—');
 
-  // 在线主机
+  // 在线主机（只对客户端模式有意义：服务端模式不选目标主机）
   const box = $('hosts-box');
   const list = $('hosts-list');
-  if (st.hosts && st.hosts.length) {
-    box.hidden = false;
+  const hasHosts = !!(st.hosts && st.hosts.length);
+  // 存给 updateModeVisibility 用，让模式切换即时生效
+  box.dataset.hasHosts = hasHosts ? '1' : '';
+  box.hidden = !isClientMode || !hasHosts;
+
+  if (hasHosts) {
     list.innerHTML = '';
     st.hosts.forEach((h) => {
       const li = document.createElement('li');
@@ -249,8 +257,6 @@ function renderStatus(st) {
       li.append(name, id);
       list.appendChild(li);
     });
-  } else {
-    box.hidden = true;
   }
 
   // 错误
