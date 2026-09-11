@@ -28,6 +28,15 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../../target/release/natpierce-keepalived.exe": "natpierce-keepalived.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"]
+      }
+    }
   }
 }
