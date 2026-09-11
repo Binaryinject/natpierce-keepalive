@@ -93,6 +93,9 @@ pub struct Keepalive {
     last_heartbeat: Option<Instant>,
     /// 最近一次失败的描述（供界面展示，如"账号或密码错误"）
     last_error: Option<String>,
+    /// 最近一次失败是否属于"配置/凭据类"（密码缺失、账号错误等）
+    /// 这类问题重启进程毫无意义，必须由用户改配置，因此不应触发重启
+    last_error_is_config: bool,
     /// 上次看到的配置文件指纹（用于热重载）
     config_fp: Option<crate::config::Fingerprint>,
 }
@@ -108,6 +111,7 @@ impl Keepalive {
             repairs: 0,
             last_heartbeat: None,
             last_error: None,
+            last_error_is_config: false,
             config_fp: fp,
         }
     }
@@ -199,12 +203,14 @@ impl Keepalive {
                         info!("自动登录成功，稍后会自动开启服务端");
                         self.failures = 0;
                         self.last_error = None;
+                        self.last_error_is_config = false;
                     }
                     Ok(false) => {
                         self.failures += 1;
                         let msg = "自动登录未成功，请检查界面「皎月连账号」里的账号与密码".to_string();
                         warn!("{msg}");
                         self.last_error = Some(msg);
+                        self.last_error_is_config = true;
                     }
                     Err(e) => {
                         self.failures += 1;
@@ -212,6 +218,7 @@ impl Keepalive {
                         let msg = format!("{e}");
                         warn!("自动登录失败: {msg}");
                         self.last_error = Some(msg);
+                        self.last_error_is_config = true;
                     }
                 }
             }
@@ -680,6 +687,11 @@ impl Keepalive {
     /// 必要时重启进程（带冷却）
     async fn maybe_restart_process(&mut self) -> Result<()> {
         let cfg = self.cfg();
+        // 配置/凭据类错误重启进程没有任何帮助，只会把状态搅乱
+        if self.last_error_is_config {
+            debug!("当前失败属于配置类问题，跳过重启进程（改配置才会生效）");
+            return Ok(());
+        }
         let threshold = cfg.keepalive.restart_after_failures.max(1);
         if self.failures < threshold {
             return Ok(());

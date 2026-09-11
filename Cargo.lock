@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "natpierce-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "natpierce-core",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "natpierce-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2226,7 +2226,7 @@ dependencies = [
 
 [[package]]
 name = "natpierce-shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "natpierce-core",
