@@ -63,8 +63,15 @@ jobs:
         shell: pwsh
         working-directory: crates/shell
         run: |
+          # NSIS 的 File 指令在编译期读取文件，hooks.nsh 用 ${__FILEDIR__}
+          # 定位到本目录，所以先把守护进程放过来
+          Copy-Item "$env:GITHUB_WORKSPACE\target\release\natpierce-keepalived.exe" `
+                    "windows\natpierce-keepalived.exe" -Force
+          if (-not (Test-Path "windows\natpierce-keepalived.exe")) {
+            throw "守护进程未就位，安装包会缺文件"
+          }
           cargo tauri bundle --bundles nsis
-          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe -EA SilentlyContinue |
+          Get-ChildItem ..\..\target\release\bundle\nsis\*.exe |
             Select-Object Name, Length | Format-Table -AutoSize
 
       - name: 把守护进程并入安装包目录
