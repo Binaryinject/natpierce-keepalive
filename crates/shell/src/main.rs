@@ -551,7 +551,11 @@ fn read_logs(
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with("keepalive.log"))
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            // 排除 .prev 备份：否则新日志还没落盘时会显示上一次运行的记录
+            n.starts_with("keepalive.log") && !n.ends_with(".prev")
+        })
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
         .max_by_key(|(t, _)| *t);
 

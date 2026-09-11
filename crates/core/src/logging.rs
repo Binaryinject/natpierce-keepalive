@@ -53,6 +53,17 @@ pub fn init(
         return None;
     }
 
+    // 每次启动清空当天日志：日志面板里就只剩"这一次启动"的过程，
+    // 不会被上一次运行的记录淹没 —— 排查"启动卡在哪一步"时这点很关键。
+    // 上一次的记录改名成 .prev 留个底，只保留最近一份。
+    let today = chrono::Local::now().format("%Y-%m-%d");
+    let today_file = log_dir.join(format!("keepalive.log.{today}"));
+    if today_file.exists() {
+        let prev = log_dir.join(format!("keepalive.log.{today}.prev"));
+        let _ = std::fs::remove_file(&prev);
+        let _ = std::fs::rename(&today_file, &prev);
+    }
+
     let appender = tracing_appender::rolling::daily(&log_dir, "keepalive.log");
     let (nb, guard) = tracing_appender::non_blocking(appender);
 

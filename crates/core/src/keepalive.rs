@@ -179,8 +179,43 @@ impl Keepalive {
         &self.loaded.config
     }
 
-    /// 执行一次巡检 + 修复
+    /// 执行一次巡检 + 修复，并**连续推进**直到状态稳定
+    ///
+    /// 修好一步（启动进程 / 登录 / 开服务端）后立刻重新探测下一步，
+    /// 而不是每修一步都等满一个巡检间隔 —— 否则
+    /// 「启动进程 → 自动登录 → 开服务端」这条链要走 3 个 60 秒，
+    /// 体感就是"皎月连明明起来了，却半天不去开服务端"。
     pub async fn tick(&mut self) -> Result<Health> {
+        /// 单次巡检最多推进的步数，防止状态反复时死循环
+        const MAX_STEPS: usize = 5;
+
+        let mut last = Health::Healthy;
+        for step in 1..=MAX_STEPS {
+            last = self.tick_once().await?;
+
+            // 只有"这一步确实做了修复、而且没失败"才继续往下推。
+            // 失败会让 failures 递增，此时应当退回常规巡检节奏，避免疯狂重试。
+            let progresses = self.failures == 0
+                && matches!(
+                    last,
+                    Health::ProcessMissing
+                        | Health::NeedLogin
+                        | Health::ServerStopped
+                        | Health::ClientDisconnected
+                );
+            if !progresses || step == MAX_STEPS {
+                break;
+            }
+
+            info!("→ 继续处理下一步（本次巡检已推进 {step} 步）");
+            // 留一点时间让皎月连把状态落实（例如刚登录完，服务端状态才刷新）
+            tokio::time::sleep(Duration::from_millis(600)).await;
+        }
+        Ok(last)
+    }
+
+    /// 执行**单步**巡检 + 修复（由 [`tick`](Self::tick) 连续调用）
+    async fn tick_once(&mut self) -> Result<Health> {
         // 每轮先检查配置有没有被界面改动过
         self.reload_if_changed();
 
@@ -779,26 +814,10 @@ impl Keepalive {
             cfg.mode, cfg.keepalive.interval_sec, cfg.keepalive.heartbeat_sec, cfg.keepalive.fail_threshold
         );
 
-        // 顺手让皎月连自己也开启「自动开启」——这样它重开后能自行恢复服务，
-        // 与我们这一层的保活形成互补。
-        if cfg.server.auto_start_server && cfg.mode == Mode::Server {
-            match api::ApiClient::connect(
-                &cfg.api.url,
-                &cfg.api.fallback_url,
-                Duration::from_millis(cfg.api.connect_timeout_ms),
-                Duration::from_millis(cfg.api.command_timeout_ms),
-            )
-            .await
-            {
-                Ok(mut c) => {
-                    if c.send(&protocol::cmd_autostart(true)).await.is_ok() {
-                        info!("已为皎月连启用「自动开启」");
-                    }
-                    c.close().await;
-                }
-                Err(e) => debug!("设置自动开启失败（不影响保活）: {e:#}"),
-            }
-        }
+        // 注：「为皎月连启用自动开启」不在这里做 —— 守护进程刚启动时
+        // 它多半还没登录，命令会被丢掉（配置里 Auto_start 一直是 0，
+        // 日志却打了"已启用"，纯属误导）。改到 start_server 成功之后发，
+        // 那时它必然已就绪。
 
         let interval = Duration::from_secs(cfg.keepalive.interval_sec.max(5));
 
