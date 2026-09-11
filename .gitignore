@@ -6,9 +6,6 @@ node_modules/
 # ---- Tauri 自动生成的 schema ----
 crates/shell/gen/
 
-# ---- 打包时临时复制进来的产物（构建前由脚本/CI 放置）----
-crates/shell/windows/natpierce-keepalived.exe
-
 # ---- 敏感配置 (绝不提交!) ----
 # config.json 可能含密码，一律忽略；只提交 config.example.json
 /config.json
