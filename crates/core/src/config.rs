@@ -158,6 +158,11 @@ pub struct ServerConfig {
     pub lan_ip: String,
     /// 是否启用组网模式（对应界面的开关）
     pub vpn_mode: bool,
+    /// 是否让皎月连自身也启用「自动开启」（对应界面上的勾选框）
+    ///
+    /// 这是第二层保障：皎月连自己重开后会自动恢复服务。
+    /// 我们这一层负责它彻底没开、或连接掉了的情况。
+    pub auto_start_server: bool,
     /// 等待"开启成功"的最长秒数（服务端要建虚拟网卡、向云端注册，通常 10-20 秒）
     pub start_timeout_sec: u64,
 }
@@ -170,6 +175,7 @@ impl Default for ServerConfig {
             max_clients: 0,
             lan_ip: String::new(),
             vpn_mode: true,
+            auto_start_server: true,
             start_timeout_sec: 45,
         }
     }

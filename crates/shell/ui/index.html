@@ -127,6 +127,10 @@
     <!-- 服务端专用 -->
     <section class="card mode-only-server">
       <h2>服务端设置</h2>
+      <p class="hint">
+        <b>组网模式</b>：虚拟网卡监听<b>所有端口</b>，无需手填端口映射（默认启用）。<br>
+        开启服务端前必须设置<b>页面访问密码</b>（6-20 位）。
+      </p>
       <div class="form-grid">
         <label>
           <span>页面访问密码 <b class="req">必填</b></span>
@@ -144,6 +148,10 @@
           <small>其他设备连接你时需要输入的密码</small>
         </label>
       </div>
+      <label class="check">
+        <input type="checkbox" id="f-auto-start">
+        <span>自动开启（皎月连自身重开后自动恢复服务，推荐勾选）</span>
+      </label>
     </section>
 
     <!-- 客户端专用 -->

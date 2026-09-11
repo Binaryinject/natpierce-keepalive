@@ -88,7 +88,7 @@ const FIELDS = [
   'maxClients', 'intervalSec', 'heartbeatSec', 'failThreshold',
   'restartAfterFailures', 'targetHostId', 'targetHostName',
 ];
-const BOOLS = ['closeServerFirst', 'keepaliveEnabled'];
+const BOOLS = ['autoStartServer', 'closeServerFirst', 'keepaliveEnabled'];
 
 // 字段名(camelCase) → DOM id：exePath → f-exe-path
 const idOf = (k) => 'f-' + k.replace(/([A-Z])/g, '-$1').toLowerCase();

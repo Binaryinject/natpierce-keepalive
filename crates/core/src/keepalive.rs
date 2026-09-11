@@ -392,8 +392,11 @@ impl Keepalive {
             &cfg.server.page_password,
             &secret::default_secrets_path(&self.loaded.path),
         )?;
-        if page_pwd.is_empty() {
-            anyhow::bail!("页面访问密码为空，无法开启服务端");
+        // 组网模式（虚拟网卡监听所有端口）下页面密码是开服务的硬性前置条件
+        if cfg.server.vpn_mode && page_pwd.is_empty() {
+            anyhow::bail!(
+                "组网模式需要页面访问密码，请在界面「服务端设置」里填写 6-20 位密码并保存"
+            );
         }
 
         let mut client = api::ApiClient::connect(
@@ -404,10 +407,14 @@ impl Keepalive {
         )
         .await?;
 
+        // 页面上「组网模式」开启时才会读取页面访问密码；
+        // 关闭组网模式（改用端口映射）时官方传空字符串，这里保持一致。
+        let page_arg: &str = if cfg.server.vpn_mode { &page_pwd } else { "" };
+
         let cmd = protocol::cmd_start_server(
             &cfg.server.connection_password,
             cfg.server.max_clients,
-            &page_pwd,
+            page_arg,
             &cfg.server.lan_ip,
         );
         client.send(&cmd).await?;
@@ -742,6 +749,27 @@ impl Keepalive {
             "保活启动 | 模式={} | 巡检间隔={}s | 心跳={}s | 失败阈值={}",
             cfg.mode, cfg.keepalive.interval_sec, cfg.keepalive.heartbeat_sec, cfg.keepalive.fail_threshold
         );
+
+        // 顺手让皎月连自己也开启「自动开启」——这样它重开后能自行恢复服务，
+        // 与我们这一层的保活形成互补。
+        if cfg.server.auto_start_server && cfg.mode == Mode::Server {
+            match api::ApiClient::connect(
+                &cfg.api.url,
+                &cfg.api.fallback_url,
+                Duration::from_millis(cfg.api.connect_timeout_ms),
+                Duration::from_millis(cfg.api.command_timeout_ms),
+            )
+            .await
+            {
+                Ok(mut c) => {
+                    if c.send(&protocol::cmd_autostart(true)).await.is_ok() {
+                        info!("已为皎月连启用「自动开启」");
+                    }
+                    c.close().await;
+                }
+                Err(e) => debug!("设置自动开启失败（不影响保活）: {e:#}"),
+            }
+        }
 
         let interval = Duration::from_secs(cfg.keepalive.interval_sec.max(5));
 
