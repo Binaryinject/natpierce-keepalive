@@ -462,9 +462,10 @@ async fn cmd_ensure(loaded: LoadedConfig) -> Result<()> {
         cfg.server.start_timeout_sec
     );
 
-    let page_pwd = natpierce_core::secret::resolve(
+    let page_pwd = natpierce_core::secret::resolve_key(
         &cfg.server.page_password,
         &natpierce_core::secret::default_secrets_path(&loaded.path),
+        natpierce_core::secret::KEY_PAGE,
     )
     .context("解析页面访问密码失败")?;
 

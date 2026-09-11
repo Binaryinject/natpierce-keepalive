@@ -116,18 +116,28 @@ c517359  chore(release): v0.1.1                                      ← 已推�
 | 8 | 登录成功却判为失败 | 登录后服务端通常仍是"未启动"（码 1），原判定只认码 2 | 码 1 / 2 都算登录成功 |
 | 9 | 误导性 "DPAPI 数据无效" | `load_key` 对不存在的键静默返回空串 | 明确 bail 并指明缺哪个密码 |
 | 10 | 无意义重启 15 次 | 密码类错误也触发重启进程 | `last_error_is_config` 守卫 |
+| 11 | **开服务端报 "DPAPI 数据无效"，但自动登录正常** | `start_server` 走 `resolve()` → `load_dpapi()`，**把整个 JSON vault 当成一个密文去解**；而同文件的 `auto_login` 走 `load_key()` 是对的 —— 同文件两条路径不一致 | 新增 `resolve_key(value, path, key)` 明确用途键，两个调用点改用它；加回归测试 `resolve_key_uses_vault_not_whole_file` |
+| 12 | 假警报「没有管理员权限，无法启动」 | 非提权时先打 WARN「无法启动」，紧接着 `ShellExecuteW("runas")` 弹 UAC 却启动成功，自相矛盾 | 降为 INFO 并如实说明「将通过 UAC 提权（弹框请选是）」 |
+| 13 | 「打开配置目录 / 打开日志目录」点击无反应 | 按钮只在 HTML 里，`app.js` 从未绑定事件 | 补三个绑定（用可选链） |
+| 14 | 多份 config.json 互相覆盖 | `resolve_config_path` 依次探测 CWD / exe 目录 / APPDATA，从哪启动读哪份 | 只认 `%LOCALAPPDATA%\皎月连保活守护\config.json` |
 
 ---
 
 ## 待验证 / 待办
 
-1. **本地测试**：`crates\shell\ui` 改动后需重新编译（UI 是编译期嵌入的）
+1. **本地测试**：`crates\shell\ui` 改动后必须重新编译（UI 是编译期嵌入的），
+   再把两个 exe 复制到唯一配置目录（运行时别从 `target\release` 启动，
+   那样配置会找不到 —— 现在只认唯一目录）：
    ```powershell
    cd D:\GIT\natpierce-keepalive
    cargo build --release
-   .\target\release\natpierce-gui.exe
+   $t = "$env:LOCALAPPDATA\皎月连保活守护"
+   Copy-Item target\release\natpierce-gui.exe,$t -Force
+   Copy-Item target\release\natpierce-keepalived.exe,$t -Force
+   & "$t\natpierce-gui.exe"
    ```
-2. **用户需在界面填「页面访问密码」** —— 这是当前唯一阻塞服务端启动的问题
+2. **端到端验证自动流程** —— 界面「运行日志」卡片可实时看到全过程：
+   拉起 natpierce → UAC → 自动登录 → 自动开启服务端
 3. 上下文压缩报错：已修 `dsh-llm` 4 处调用（加 `?.`），**需重启 DSH 生效**
 
 ---

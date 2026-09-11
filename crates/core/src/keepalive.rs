@@ -360,12 +360,13 @@ impl Keepalive {
         let workdir = cfg.natpierce.resolve_working_dir();
 
         if !process::is_elevated() {
-            warn!(
-                "当前没有管理员权限，无法启动 {}。\
-                 请以管理员身份运行，或安装为 Windows 服务 / 计划任务（SYSTEM）。",
+            // 非提权不是错误 —— 下面用 ShellExecuteW("runas") 触发 UAC 提权即可。
+            // 这里原来打的是 WARN「没有管理员权限，无法启动」，但实际能启动成功，
+            // 既吓人又和后面的「已启动」自相矛盾，改成如实说明。
+            info!(
+                "当前非管理员权限，将通过 UAC 提权启动 {}（若弹出确认框请选「是」）",
                 exe.display()
             );
-            // 仍然尝试一次，让 UAC 有机会弹出
         }
 
         process::start_elevated(&exe, &cfg.natpierce.start_args, &workdir)?;
@@ -388,9 +389,10 @@ impl Keepalive {
     /// 服务层：发 startServer
     async fn start_server(&self) -> Result<bool> {
         let cfg = self.cfg();
-        let page_pwd = secret::resolve(
+        let page_pwd = secret::resolve_key(
             &cfg.server.page_password,
             &secret::default_secrets_path(&self.loaded.path),
+            secret::KEY_PAGE,
         )?;
         // 组网模式（虚拟网卡监听所有端口）下页面密码是开服务的硬性前置条件
         if cfg.server.vpn_mode && page_pwd.is_empty() {

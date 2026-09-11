@@ -44,8 +44,13 @@ pub fn parse_reference(value: &str) -> SecretSource {
     SecretSource::Plain(v.to_string())
 }
 
-/// 解析密码引用，得到明文
-pub fn resolve(value: &str, secrets_path: &Path) -> Result<String> {
+/// 解析密码引用，得到明文，并明确指定用途键
+///
+/// ⚠️ `dpapi` 引用**必须**走这里，从多密钥 vault 里取 `key` 对应的那一项。
+/// 绝不能用 [`load_dpapi`] 把整个文件当密文解 —— vault 是 JSON，
+/// 那样会得到 `CryptUnprotectData 失败 0x8007000D 数据无效`，
+/// 而且报错信息完全指不出真正原因（历史上就是这么坑了很久）。
+pub fn resolve_key(value: &str, secrets_path: &Path, key: &str) -> Result<String> {
     match parse_reference(value) {
         SecretSource::Empty => Ok(String::new()),
         SecretSource::Plain(s) => Ok(s),
@@ -59,8 +64,15 @@ pub fn resolve(value: &str, secrets_path: &Path) -> Result<String> {
                 .with_context(|| format!("读取密码文件失败: {}", p.display()))?;
             Ok(text.trim().to_string())
         }
-        SecretSource::Dpapi => load_dpapi(secrets_path),
+        SecretSource::Dpapi => load_key(secrets_path, key),
     }
+}
+
+/// 解析密码引用，得到明文（`dpapi` 按页面访问密码处理）
+///
+/// 兼容用的薄包装；新代码请用 [`resolve_key`] 指明用途。
+pub fn resolve(value: &str, secrets_path: &Path) -> Result<String> {
+    resolve_key(value, secrets_path, KEY_PAGE)
 }
 
 /// DPAPI 加密文件默认路径（与 config.json 同目录）
@@ -409,5 +421,38 @@ mod tests {
                 Err(e) => eprintln!("[4] base64 解码失败 = {e:?}"),
             }
         }
+    }
+
+    /// 回归测试：`dpapi` 引用必须走多密钥 vault 取对应键，
+    /// 而不是把整个 JSON 文件当成一个密文去解密
+    /// —— 那样会得到 0x8007000D，报错信息还完全指不出真因。
+    #[cfg(windows)]
+    #[test]
+    fn resolve_key_uses_vault_not_whole_file() {
+        let dir = std::env::temp_dir().join("natpierce-keepalive-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("secrets.dpapi");
+        let _ = std::fs::remove_file(&path);
+
+        save_key(&path, KEY_PAGE, "111111").expect("save page");
+        save_key(&path, KEY_LOGIN, "login-pwd").expect("save login");
+
+        // 各用途取各的，互不串味
+        assert_eq!(resolve_key("dpapi", &path, KEY_PAGE).unwrap(), "111111");
+        assert_eq!(resolve_key("dpapi", &path, KEY_LOGIN).unwrap(), "login-pwd");
+        // 兼容包装默认按页面密码
+        assert_eq!(resolve("dpapi", &path).unwrap(), "111111");
+
+        // 用途缺失要明确报「尚未保存」，而不是甩一个 DPAPI 解密失败
+        let err = resolve_key("dpapi", &path, KEY_CONNECTION)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("尚未保存"), "应指明缺失用途，实际: {err}");
+
+        // 其它引用形式不受影响
+        assert_eq!(resolve_key("plain-text", &path, KEY_PAGE).unwrap(), "plain-text");
+        assert_eq!(resolve_key("", &path, KEY_PAGE).unwrap(), "");
+
+        let _ = std::fs::remove_file(&path);
     }
 }
