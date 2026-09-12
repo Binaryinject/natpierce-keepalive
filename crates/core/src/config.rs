@@ -185,13 +185,21 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ClientConfig {
-    /// 目标主机 ID（识别码）；留空则用下面的名称匹配
+    /// 【已弃用】目标主机的会话编号
+    ///
+    /// 皎月连每接入一次就重新分配这个编号（日志里能见到 `[1]→[2]→[3]→[4]`），
+    /// 对方重启或重连后必然变化，**不能作为持久标识**。
+    /// 保留字段仅为兼容旧配置，匹配时已不再使用 —— 请改用 `target_addr`。
     pub target_host_id: String,
-    /// 目标主机名（用于显示/兜底匹配）
+    /// **目标主机的组网虚拟 IP**（如 `10.6.22.2`）—— 首选匹配方式
+    ///
+    /// 按设备分配，不随重连变化，是这里最稳定的标识。
+    pub target_addr: String,
+    /// 目标主机名（虚拟 IP 为空时的兜底；对方改名则失效）
     pub target_host_name: String,
     /// 连接密码（若目标主机设置了）
     pub connection_password: String,
-    /// 在线主机列表中的序号（1 起，0 = 用 ID/名称匹配）
+    /// 在线主机列表中的序号（1 起，0 = 按虚拟 IP / 名称匹配）
     pub target_index: usize,
     /// 进入客户端模式前，自动停掉本机的服务端
     ///
@@ -204,6 +212,7 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             target_host_id: String::new(),
+            target_addr: String::new(),
             target_host_name: String::new(),
             connection_password: String::new(),
             target_index: 0,

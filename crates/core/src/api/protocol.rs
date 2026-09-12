@@ -238,10 +238,16 @@ pub enum LogAction {
 /// 在线主机
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostEntry {
+    /// 会话编号 —— **每次接入都会重新分配**（日志里能看到 [1]→[2]→[3]→[4]），
+    /// 所以它不能当稳定标识用。
     pub id: String,
+    /// 机器名。相对稳定，但对方改名就失效。
     pub name: String,
     /// 映射信息（若有）
     pub mappings: String,
+    /// 组网虚拟 IP（如 `10.6.22.2`）。
+    /// 这是目前最稳定的标识 —— 按设备分配，不随重连变化。
+    pub addr: String,
 }
 
 impl Message {
@@ -333,6 +339,9 @@ fn parse_server_info(m: &RawMessage) -> ServerInfo {
 ///
 /// 即 `kind` 之后的字段是**若干条 4 元组**。参考实现见
 /// 社区版 keepalive 的 `parseHostList()`：以 4 为步长遍历，跳过空 id 与 `me`。
+///
+/// 其中 `id` 是**会话编号**（每次接入重新分配），`addr` 才是组网虚拟 IP ——
+/// 后者用来做持久化识别。
 pub fn parse_host_list(m: &RawMessage) -> Vec<HostEntry> {
     let f = &m.fields;
     let mut out = Vec::new();
@@ -342,6 +351,7 @@ pub fn parse_host_list(m: &RawMessage) -> Vec<HostEntry> {
         let id = f[i].trim().to_string();
         let name = f[i + 1].trim().to_string();
         let mappings = f[i + 2].trim().to_string();
+        let addr = f[i + 3].trim().to_string();
 
         // 跳过自己与空记录
         if !id.is_empty() && id != "me" && id != "0" {
@@ -349,6 +359,7 @@ pub fn parse_host_list(m: &RawMessage) -> Vec<HostEntry> {
                 id,
                 name,
                 mappings,
+                addr,
             });
         }
         i += 4;

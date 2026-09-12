@@ -389,12 +389,14 @@ impl Keepalive {
     /// 只要对方在线就判定健康，`connect_target()` 永远不会被触发，
     /// 表现为「填了识别码，日志里却根本不发起连接」。
     /// **在线 ≠ 已连接** —— 前者只说明"能看见对方"。
+    ///
+    /// 匹配用的是**组网虚拟 IP**（会话编号每次接入都会变，不能当标识）。
     fn client_connected(&self, r: &api::ProbeResult) -> bool {
         let cfg = self.cfg();
-        let target_id = cfg.client.target_host_id.trim();
+        let target_addr = cfg.client.target_addr.trim();
         let target_name = cfg.client.target_host_name.trim();
 
-        if target_id.is_empty() && target_name.is_empty() && cfg.client.target_index == 0 {
+        if target_addr.is_empty() && target_name.is_empty() && cfg.client.target_index == 0 {
             // 未配置目标：只要 API 通就算健康（纯保活，不锁定主机）
             return true;
         }
@@ -409,10 +411,14 @@ impl Keepalive {
         // ② 拿不到连接状态时：目标必须在线（不在线必然连不上），
         //    再叠加"上一次我们确实连上过"。两个都满足才算健康，
         //    否则交给 connect_target() 去连。
-        let target_online = if target_id.is_empty() {
-            r.hosts.iter().any(|h| h.name == target_name)
+        let target_online = if !target_addr.is_empty() {
+            r.hosts
+                .iter()
+                .any(|h| h.addr == target_addr || h.addr.split(':').next() == Some(target_addr))
         } else {
-            r.hosts.iter().any(|h| h.id == target_id)
+            r.hosts
+                .iter()
+                .any(|h| h.name.eq_ignore_ascii_case(target_name))
         };
         target_online && self.client_link_ok
     }
@@ -702,20 +708,42 @@ impl Keepalive {
         Ok(ok)
     }
 
-    /// 从在线主机里挑出目标
+    /// 从在线主机里挑出目标，返回它**当前**的会话编号
+    ///
+    /// `pclist` 里的 `id` 是会话编号，每接入一次就变（日志里能见到
+    /// `[1]→[2]→[3]→[4]`）。所以这里用**组网虚拟 IP**这类稳定标识去匹配，
+    /// 再取出此刻的编号交给 `conpc` —— 对方重连、编号变了都不影响。
     fn pick_target(&self, hosts: &[protocol::HostEntry]) -> Result<String> {
         let cfg = self.cfg();
 
-        // 1. 明确指定了 ID
-        let id = cfg.client.target_host_id.trim();
-        if !id.is_empty() {
-            if let Some(h) = hosts.iter().find(|h| h.id == id) {
+        // 1. 按组网虚拟 IP 匹配（首选：按设备分配，最稳定）
+        let addr = cfg.client.target_addr.trim();
+        if !addr.is_empty() {
+            if let Some(h) = hosts
+                .iter()
+                .find(|h| h.addr == addr || h.addr.split(':').next() == Some(addr))
+            {
                 return Ok(h.id.clone());
             }
-            anyhow::bail!("指定的目标主机 {id} 不在线");
+            let online: Vec<String> = hosts
+                .iter()
+                .map(|h| format!("{} ({})", h.addr, h.name))
+                .collect();
+            anyhow::bail!(
+                "目标虚拟 IP {addr} 不在线（当前在线：{}）",
+                if online.is_empty() {
+                    "无".to_string()
+                } else {
+                    online.join("、")
+                }
+            );
         }
 
-        // 2. 按名称匹配
+        // 2. 按名称匹配（**主要的持久化识别方式**）
+        //    会话编号每次接入都会重新分配，虚拟 IP 协议里不给，
+        //    所以主机名是唯一重启不变的标识。
+        //    先精确匹配（忽略大小写），再退化为包含匹配，
+        //    容忍"家宝" ↔ "家宝-PC" 这种差异。
         let name = cfg.client.target_host_name.trim();
         if !name.is_empty() {
             if let Some(h) = hosts
@@ -724,7 +752,23 @@ impl Keepalive {
             {
                 return Ok(h.id.clone());
             }
-            anyhow::bail!("按名称 {name} 未匹配到在线主机");
+            let needle = name.to_lowercase();
+            let cands: Vec<&protocol::HostEntry> = hosts
+                .iter()
+                .filter(|h| h.name.to_lowercase().contains(&needle))
+                .collect();
+            match cands.len() {
+                1 => return Ok(cands[0].id.clone()),
+                0 => anyhow::bail!("按名称「{name}」未匹配到在线主机"),
+                n => {
+                    let list: Vec<String> =
+                        cands.iter().map(|h| h.name.clone()).collect();
+                    anyhow::bail!(
+                        "名称「{name}」匹配到 {n} 台主机（{}），请填更完整的名字",
+                        list.join("、")
+                    );
+                }
+            }
         }
 
         // 3. 按序号

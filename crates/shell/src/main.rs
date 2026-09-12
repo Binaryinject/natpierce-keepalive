@@ -65,8 +65,12 @@ struct Status {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HostInfo {
+    /// 机器名
     name: String,
+    /// 会话编号（每次接入都会重新分配，仅用作展示，不作为锁定依据）
     id: String,
+    /// 组网虚拟 IP —— 界面点选时填的就是它，稳定不变
+    addr: String,
     mappings: String,
 }
 
@@ -96,8 +100,12 @@ struct ConfigView {
     fail_threshold: String,
     #[serde(default)]
     restart_after_failures: String,
+    /// 【已弃用】会话编号 —— 每次接入都会变，不再参与匹配
     #[serde(default)]
     target_host_id: String,
+    /// 目标主机的组网虚拟 IP（首选匹配方式，最稳定）
+    #[serde(default)]
+    target_addr: String,
     #[serde(default)]
     target_host_name: String,
     #[serde(default)]
@@ -141,6 +149,7 @@ impl ConfigView {
             fail_threshold: cfg.keepalive.fail_threshold.to_string(),
             restart_after_failures: cfg.keepalive.restart_after_failures.to_string(),
             target_host_id: cfg.client.target_host_id.clone(),
+            target_addr: cfg.client.target_addr.clone(),
             target_host_name: cfg.client.target_host_name.clone(),
             close_server_first: cfg.client.close_server_first,
             keepalive_enabled: cfg.keepalive.enabled,
@@ -191,10 +200,13 @@ impl ConfigView {
             cfg.account = self.account.trim().to_string();
         }
         // 只在非空时更新：前端字段名一旦对不上，传来的就是空串，
-        // 无条件覆盖会把用户已经存好的识别码悄悄清掉
+        // 无条件覆盖会把用户已经存好的目标悄悄清掉
         // （界面上 id 写错那次就是这样，表现为"填了识别码却报未指定"）。
-        if !self.target_host_id.trim().is_empty() {
-            cfg.client.target_host_id = self.target_host_id.trim().to_string();
+        //
+        // 目标以**组网虚拟 IP** 为准；会话编号（target_host_id）已弃用，
+        // 不再从界面写入，仅保留字段以兼容旧配置。
+        if !self.target_addr.trim().is_empty() {
+            cfg.client.target_addr = self.target_addr.trim().to_string();
         }
         if !self.target_host_name.trim().is_empty() {
             cfg.client.target_host_name = self.target_host_name.trim().to_string();
@@ -371,12 +383,15 @@ fn check_config(state: tauri::State<'_, Mutex<AppState>>) -> Result<ConfigCheck,
     }
 
     // ③ 客户端模式要能定位目标
+    //    以**主机名**为主：会话编号每次接入都会重新分配，而组网虚拟 IP
+    //    协议里不给（pclist 第 4 个字段实测为空），所以主机名是唯一
+    //    重启不变的标识。虚拟 IP 若被手工填了，也允许作为备选。
     if cfg.mode == Mode::Client
-        && cfg.client.target_host_id.trim().is_empty()
         && cfg.client.target_host_name.trim().is_empty()
+        && cfg.client.target_addr.trim().is_empty()
         && cfg.client.target_index == 0
     {
-        problems.push("客户端模式需要指定「目标识别码」，可在上方在线主机列表点选".into());
+        problems.push("客户端模式需要指定「目标主机名」，可在上方在线主机列表点选".into());
     }
 
     Ok(ConfigCheck {
@@ -677,6 +692,19 @@ fn main() {
         .setup(|app| {
             build_tray(app.handle())?;
 
+            // ⓪ 窗口初始可见性
+            // 开机自启（注册表 Run 项）会带 --tray 启动 —— 那种情况只驻留托盘、
+            // 不弹窗打扰；手动双击启动才显示设置窗口。
+            // 窗口在 tauri.conf.json 里默认 visible=false，统一由这里决定显示与否，
+            // 免得自启时窗口先闪一下再缩回托盘。
+            let start_hidden = std::env::args().any(|a| a == "--tray" || a == "--hidden");
+            if start_hidden {
+                tracing::info!("以 --tray 启动：静默驻留托盘，不显示窗口");
+            } else if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+
             // ① 后端主动推送状态（取代前端轮询）
             spawn_status_pusher(app.handle().clone());
 
@@ -783,6 +811,7 @@ async fn collect_status(path: &std::path::Path) -> Result<Status, String> {
             s.hosts = r.hosts.iter().map(|h| HostInfo {
                 name: h.name.clone(),
                 id: h.id.clone(),
+                addr: h.addr.clone(),
                 mappings: h.mappings.clone(),
             }).collect();
         }

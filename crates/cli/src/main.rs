@@ -395,7 +395,7 @@ async fn cmd_status(loaded: LoadedConfig) -> Result<()> {
             if !r.hosts.is_empty() {
                 println!("在线主机 ({} 台):", r.hosts.len());
                 for (n, h) in r.hosts.iter().enumerate() {
-                    println!("  {}. {} [{}]", n + 1, h.name, h.id);
+                    println!("  {}. {}", n + 1, h.name);
                 }
             }
             for info in &r.infos {
@@ -427,12 +427,14 @@ async fn cmd_hosts(loaded: LoadedConfig) -> Result<()> {
         return Ok(());
     }
     println!("在线主机 ({} 台):", r.hosts.len());
-    println!("{:<4} {:<24} {:<12} {}", "序号", "名称", "识别码", "映射");
+    println!("{:<4} {:<28} {}", "序号", "名称", "映射");
     for (n, h) in r.hosts.iter().enumerate() {
-        println!("{:<4} {:<24} {:<12} {}", n + 1, h.name, h.id, h.mappings);
+        println!("{:<4} {:<28} {}", n + 1, h.name, h.mappings);
     }
     println!();
-    println!("把识别码填进 config.json 的 client.target_host_id 即可锁定目标。");
+    println!("把「名称」填进 config.json 的 client.target_host_name 即可锁定目标。");
+    println!("注：会话编号每次接入都会重新分配，组网虚拟 IP 协议里不提供，");
+    println!("    所以主机名是唯一重启不变的标识。");
     Ok(())
 }
 
@@ -644,7 +646,7 @@ fn print_help() {
 
 命令:
   status              查看当前状态（进程 / 服务端 / 在线主机）
-  hosts               列出在线主机及其识别码
+  hosts               列出在线主机及其组网虚拟 IP
   ensure              若服务端未启动则开启它（幂等，适合一次性修复）
   run                 进入保活循环（前台，Ctrl+C 退出；服务模式由 SCM 调用）
   daemon              同 run，但用于后台常驻（不做 Ctrl+C 处理）

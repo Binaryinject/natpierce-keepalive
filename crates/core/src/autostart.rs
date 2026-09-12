@@ -20,9 +20,12 @@ pub const VALUE_NAME: &str = "NatpierceKeepalive";
 
 /// 生成要写入的启动命令行
 ///
-/// 形如：`"C:\path\to\natpierce-keepalive.exe" gui --config "C:\path\config.json"`
+/// 形如：`"C:\path\natpierce-gui.exe" --tray --config "C:\path\config.json"`
+///
+/// `--tray` 让界面**静默驻留托盘**：开机自启不该弹窗打扰，
+/// 想看设置时点一下托盘图标即可。手动双击启动不带该参数，照常显示窗口。
 pub fn build_command(exe: &Path, config: Option<&Path>) -> String {
-    let mut cmd = format!("\"{}\" gui", exe.display());
+    let mut cmd = format!("\"{}\" --tray", exe.display());
     if let Some(c) = config {
         cmd.push_str(&format!(" --config \"{}\"", c.display()));
     }
@@ -210,15 +213,16 @@ mod tests {
 
     #[test]
     fn command_format() {
-        let exe = PathBuf::from(r"C:\app\natpierce-keepalive.exe");
+        let exe = PathBuf::from(r"C:\app\natpierce-gui.exe");
         let cfg = PathBuf::from(r"C:\app\config.json");
         let cmd = build_command(&exe, Some(&cfg));
         assert_eq!(
             cmd,
-            r#""C:\app\natpierce-keepalive.exe" gui --config "C:\app\config.json""#
+            r#""C:\app\natpierce-gui.exe" --tray --config "C:\app\config.json""#
         );
 
+        // 无配置路径时同样要带 --tray（开机自启静默驻留托盘）
         let cmd2 = build_command(&exe, None);
-        assert_eq!(cmd2, r#""C:\app\natpierce-keepalive.exe" gui"#);
+        assert_eq!(cmd2, r#""C:\app\natpierce-gui.exe" --tray"#);
     }
 }

@@ -86,7 +86,7 @@ const FIELDS = [
   'account',
   'exePath', 'workingDir', 'processName', 'startArgs', 'apiUrl',
   'maxClients', 'intervalSec', 'heartbeatSec', 'failThreshold',
-  'restartAfterFailures', 'targetHostId', 'targetHostName',
+  'restartAfterFailures', 'targetHostName',
 ];
 const BOOLS = ['autoStartServer', 'closeServerFirst', 'keepaliveEnabled'];
 
@@ -122,7 +122,7 @@ function renderConfigCheck(check) {
     const hint = $('config-hint');
     if (hint) {
       hint.textContent = isClient
-        ? '客户端模式所需：① 选择 natpierce.exe；② 指定目标识别码（可在上方「在线主机」列表点选）。改完点底部「保存配置」。'
+        ? '客户端模式所需：① 选择 natpierce.exe；② 填写目标主机名（可在上方「在线主机」列表点选）。改完点底部「保存配置」。'
         : '服务端模式所需：① 选择 natpierce.exe；② 填写页面访问密码（组网模式下必填）。改完点底部「保存配置」。';
     }
   }
@@ -283,18 +283,22 @@ function renderStatus(st) {
       const li = document.createElement('li');
       const name = document.createElement('span');
       name.textContent = h.name || '(未命名)';
-      const id = document.createElement('span');
-      id.className = 'id';
-      id.textContent = h.id;
-      id.title = '点击填入「目标识别码」';
-      id.onclick = () => {
-        // id 必须与 FIELDS 推导出的 DOM id 一致（targetHostId → f-target-host-id），
-        // 否则点选能填进框里、保存却读不到，识别码永远不会被写进配置
-        $('f-target-host-id').value = h.id;
-        $('f-target-host-name').value = h.name || '';
+      // 只显示并填入「主机名」：会话编号每次接入都会变，
+      // 虚拟 IP 协议里不给（pclist 第 4 个字段实测为空），
+      // 所以主机名是唯一重启不变的锁定依据。
+      const pick = document.createElement('span');
+      pick.className = 'id';
+      pick.textContent = '选择';
+      pick.title = '点击填入「目标主机名」';
+      pick.onclick = () => {
+        if (!h.name) {
+          showMsg('该主机没有名称，无法按名称锁定', true);
+          return;
+        }
+        $('f-target-host-name').value = h.name;
         showMsg(`已选择目标：${h.name}`, false);
       };
-      li.append(name, id);
+      li.append(name, pick);
       list.appendChild(li);
     });
   }

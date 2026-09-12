@@ -69,7 +69,7 @@
       <div class="hosts" id="hosts-box" hidden>
         <div class="hosts-title">在线主机</div>
         <ul id="hosts-list"></ul>
-        <p class="hint">把主机名右侧的识别码填入下方「目标识别码」即可锁定目标。</p>
+        <p class="hint">点右侧「选择」把主机名填入下方「目标主机名」即可锁定目标（重启不变）。</p>
       </div>
 
       <div class="alert error" id="status-error" hidden></div>
@@ -172,14 +172,9 @@
       <h2>客户端设置</h2>
       <div class="form-grid">
         <label>
-          <span>目标识别码 <b class="req">必填</b></span>
-          <input type="text" id="f-target-host-id" placeholder="见上方在线主机的 [ID]">
-          <small>推荐用识别码，最精确。也可直接在上方列表点选</small>
-        </label>
-        <label>
-          <span>目标主机名（备用）</span>
-          <input type="text" id="f-target-host-name" placeholder="识别码为空时按名称匹配">
-          <small>识别码填了就无需此项</small>
+          <span>目标主机名 <b class="req">必填</b></span>
+          <input type="text" id="f-target-host-name" placeholder="如 家宝（见上方在线主机列表）">
+          <small>重启不变，是唯一稳定的锁定方式。可点上方列表直接填入</small>
         </label>
       </div>
       <label class="check">
